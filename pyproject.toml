@@ -1,0 +1,56 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["migrations", "scratch", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "DJ",   # flake8-django
+    "C4",   # comprehensions
+    "SIM",  # simplify
+]
+ignore = [
+    "E501",  # line length is handled by the formatter
+    "B008",  # function call in default argument - normal in DRF
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/migrations/*" = ["E", "F", "I", "B", "UP", "DJ", "C4", "SIM"]
+"*/settings/*" = ["F403", "F405"]  # star imports are the documented pattern here
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "bcm_backend"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+extend-exclude = "migrations|scratch|\\.venv"
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+exclude = ["migrations/", "scratch/", "\\.venv/"]
+
+# Migrations are generated; type-checking them finds nothing useful.
+[[tool.mypy.overrides]]
+module = "*.migrations.*"
+ignore_errors = true
+
+[tool.django-stubs]
+django_settings_module = "bcm_backend.settings.test"
+
+[tool.coverage.run]
+source = ["apps"]
+omit = ["*/migrations/*", "*/tests/*", "*/management/commands/seed_*"]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true

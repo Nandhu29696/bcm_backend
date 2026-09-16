@@ -1,0 +1,15 @@
+Hello,
+
+{{ reviewed_by }} has sent the business continuity plan for {{ cost_code }}
+(version {{ version_number }}) back for rework.
+
+What needs to change:
+
+    {{ comments }}
+
+The plan is editable again. Once updated, submit it for review as before:
+
+    {{ frontend_url }}/plan-versions/{{ plan_version_id }}
+
+--
+BCM Application

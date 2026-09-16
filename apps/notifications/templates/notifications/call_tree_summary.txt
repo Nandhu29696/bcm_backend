@@ -1,0 +1,12 @@
+Hello,
+
+Call tree {{ call_tree_run_id }} for cost code {{ cost_code }} has completed.
+
+    Members       {{ members }}
+    Reached       {{ reached }}
+    Not reached   {{ unreached }}
+{% for row in by_level %}
+    {{ row.label }}: {{ row.members_reached }} of {{ row.members_attempted }} reached
+{% endfor %}
+--
+BCM Application

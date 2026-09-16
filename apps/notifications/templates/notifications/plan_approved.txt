@@ -1,0 +1,15 @@
+Hello,
+
+The business continuity plan for {{ cost_code }} (version {{ version_number }})
+has been approved by {{ approved_by }}.
+{% if comments %}
+Comment: {{ comments }}
+{% endif %}
+The approved document is being generated and will be available on the plan page:
+
+    {{ frontend_url }}/cost-codes/?version={{ plan_version_id }}
+
+This version is now locked. To make changes, create a new version from it.
+
+--
+BCM Application

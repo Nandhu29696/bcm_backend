@@ -1,0 +1,13 @@
+Hello {{ display_name }},
+
+Your BCM verification code is:
+
+    {{ code }}
+
+It expires in {{ expiry_minutes }} minutes and can be used once.
+
+If you did not try to sign in, you can ignore this email — but please tell your
+BCM administrator, because someone has your password.
+
+--
+BCM Application

@@ -1,0 +1,10 @@
+Hello {{ display_name }},
+
+You signed in to BCM with {{ provider }} successfully, but your account is not
+linked to an employee record yet, so there is nothing for you to see.
+
+A BCM administrator needs to link your account and assign your role. This message
+has been logged for them.
+
+--
+BCM Application

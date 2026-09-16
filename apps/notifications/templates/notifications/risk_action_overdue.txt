@@ -1,0 +1,16 @@
+Hello {{ display_name }},
+
+A {{ action_type|lower }} action on the business continuity plan for
+{{ cost_code }} is {{ days_overdue }} day{{ days_overdue|pluralize }} past its target date.
+
+    Risk         {{ risk_name }}
+    Action       {{ description }}
+    Status       {{ status }}
+    Target date  {{ target_date }}
+
+Please update the action or its target date:
+
+    {{ frontend_url }}/plan-versions/{{ plan_version_id }}?section=risks
+
+--
+BCM Application

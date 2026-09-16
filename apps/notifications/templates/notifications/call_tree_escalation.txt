@@ -1,0 +1,11 @@
+Hello {{ bu_lead_name|default:"there" }},
+
+{{ member_name }} has not responded to the call tree for cost code {{ cost_code }}
+after voice, Microsoft Teams and email attempts.
+
+Please reach them by other means.
+
+    {{ frontend_url }}/crisis
+
+--
+BCM Application

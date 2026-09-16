@@ -1,0 +1,18 @@
+Hello {{ bu_lead_name|default:"there" }},
+
+The business continuity plan below has been submitted for your review by
+{{ submitted_by }}.
+
+    Cost code   {{ cost_code }}
+    Process     {{ process_name }}
+    Estate      {{ estate_name }}
+    Version     {{ version_number }}
+{% if comments %}
+Note from the coordinator: {{ comments }}
+{% endif %}
+Please review and approve it, or send it back with what needs to change:
+
+    {{ frontend_url }}/plan-versions/{{ plan_version_id }}
+
+--
+BCM Application

@@ -1,0 +1,18 @@
+Hello {{ display_name }},
+
+You have been assigned as {{ coordinator_type|default:"coordinator" }} for the
+business continuity plan below.
+
+    Cost code   {{ cost_code }}
+    Process     {{ process_name }}
+    Estate      {{ estate_name }}
+    Version     {{ version_number }} ({{ status }})
+
+{% if assigned_by %}Assigned by {{ assigned_by }}.
+{% endif %}
+Open the plan here:
+
+    {{ frontend_url }}/plan-versions/{{ plan_version_id }}
+
+--
+BCM Application

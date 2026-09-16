@@ -1,0 +1,15 @@
+Hello {{ bu_lead_name|default:"there" }},
+
+A business continuity plan has been waiting for your review for
+{{ days_pending }} day{{ days_pending|pluralize }}.
+
+    Cost code   {{ cost_code }}
+    Process     {{ process_name }}
+    Version     {{ version_number }}
+
+Please approve it or send it back:
+
+    {{ frontend_url }}/plan-versions/{{ plan_version_id }}
+
+--
+BCM Application

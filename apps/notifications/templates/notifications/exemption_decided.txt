@@ -1,0 +1,16 @@
+Hello,
+
+Your exemption request for the business continuity plan {{ cost_code }}
+(version {{ version_number }}) has been decided by {{ decided_by }}:
+
+    Decision   {{ decision }}
+{% if comment %}    Comment    {{ comment }}
+{% endif %}
+{% if decision == "Approved" %}The plan version is now marked Exempted and needs no further work.
+{% elif decision == "Rework" %}Update the request and resubmit it from the plan page.
+{% else %}The plan continues through the normal review cycle.
+{% endif %}
+    {{ frontend_url }}/cost-codes/?exemption={{ exemption_id }}
+
+--
+BCM Application

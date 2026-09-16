@@ -1,0 +1,14 @@
+Hello,
+
+Your {{ report_name }} ({{ report_format }}, {{ rows }} row{{ rows|pluralize }}) is ready.
+
+Download it here (the link is valid for {{ expires_hours }} hour{{ expires_hours|pluralize }}):
+
+    {{ download_url }}
+{% if schedule != "Once" %}
+This report runs {{ schedule|lower }}. Manage it here:
+
+    {{ frontend_url }}/reports
+{% endif %}
+--
+BCM Application

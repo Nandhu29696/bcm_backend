@@ -1,0 +1,19 @@
+Hello {{ bu_lead_name|default:"there" }},
+
+A crisis event has been initiated by {{ initiated_by }}.
+
+    Cost code     {{ cost_code }}
+    Process       {{ process_name }}
+    Estate        {{ estate_name }}
+    Type          {{ event_type }}
+    CSD ticket    {{ csd_ticket_number|default:"-" }}
+    When          {{ event_date }}{% if event_time %} {{ event_time }}{% endif %}
+{% if comments %}
+{{ comments }}
+{% endif %}
+The CMSC call tree has been started. Follow it here:
+
+    {{ frontend_url }}/crisis/{{ crisis_event_id }}
+
+--
+BCM Application

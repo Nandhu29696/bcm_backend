@@ -1,0 +1,15 @@
+Hello,
+
+A {{ test_type }} is scheduled in {{ days_ahead }} day{{ days_ahead|pluralize }}:
+
+    Cost code   {{ cost_code }}
+    Process     {{ process_name }}
+    Estate      {{ estate_name }}
+    Date        {{ scheduled_date }}{% if scheduled_time %} at {{ scheduled_time }}{% endif %}
+
+Open the test to review the details or record the outcome afterwards:
+
+    {{ frontend_url }}/tests/{{ test_id }}
+
+--
+BCM Application

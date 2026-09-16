@@ -1,0 +1,15 @@
+Hello {{ bu_lead_name|default:"there" }},
+
+{{ requested_by }} has asked for the business continuity plan for {{ cost_code }}
+(version {{ version_number }}) to be exempted from the BCP cycle.
+
+Reason given:
+
+    {{ reason }}
+
+Please approve, reject, or send the request back with what is missing:
+
+    {{ frontend_url }}/cost-codes/?exemption={{ exemption_id }}
+
+--
+BCM Application

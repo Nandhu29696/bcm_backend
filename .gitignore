@@ -1,0 +1,51 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Django
+*.log
+media/
+staticfiles/
+db.sqlite3
+
+# Scratch output from inspectdb and one-off scripts. Never part of the build.
+scratch/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+coverage/
+*.local
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Playwright (Phase 2.7)
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Local convenience sheet of seeded demo accounts (dev only, not for the repo)
+demo_logins.xlsx
+backups/
