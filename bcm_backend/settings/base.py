@@ -12,12 +12,11 @@ from pathlib import Path
 
 import environ
 
-# bcm_backend/bcm_backend/settings/base.py -> repo root is four levels up.
+# bcm_backend/bcm_backend/settings/base.py -> the backend root is three levels up.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-REPO_ROOT = BASE_DIR.parent
 
 env = environ.Env()
-environ.Env.read_env(REPO_ROOT / ".env")
+environ.Env.read_env(BASE_DIR / ".env")
 
 
 # --------------------------------------------------------------------------- #
