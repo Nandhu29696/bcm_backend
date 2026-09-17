@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+from openpyxl import Workbook
+from django.http import HttpResponse
 
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
@@ -11,6 +13,7 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -26,6 +29,7 @@ from apps.accounts.models import (
     UserEstateScope,
     UserRole,
 )
+from apps.accounts.employee_import import TEMPLATE_HEADERS, import_employees
 from apps.accounts.permissions import IsActiveUser, IsAdmin
 from apps.accounts.serializers import (
     CurrentUserSerializer,
@@ -637,3 +641,35 @@ class EmployeeLookupViewSet(
     permission_classes = [IsAuthenticated, IsActiveUser]
     search_fields = ["full_name", "email", "employee_number"]
     filterset_fields = ["employee_number"]
+
+
+class EmployeeBulkUploadView(APIView):
+    """Create or update employee records from the legacy Excel export."""
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+    parser_classes = [MultiPartParser]
+
+    def get(self, request, *args, **kwargs):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Employees"
+        sheet.append(TEMPLATE_HEADERS)
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+        for cell in sheet[1]:
+            cell.font = cell.font.copy(bold=True)
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = 'attachment; filename="employee_bulk_upload_template.xlsx"'
+        workbook.save(response)
+        return response
+
+    def post(self, request, *args, **kwargs):
+        upload = request.FILES.get("file")
+        if not upload:
+            return Response({"detail": "Attach an Excel workbook in the file field."}, status=status.HTTP_400_BAD_REQUEST)
+        if not upload.name.lower().endswith((".xlsx", ".xlsm")):
+            return Response({"detail": "Only .xlsx or .xlsm workbooks are supported."}, status=status.HTTP_400_BAD_REQUEST)
+        result = import_employees(upload.read())
+        return Response({"created": result.created, "updated": result.updated, "estates_created": result.estates_created, "errors": result.errors})
