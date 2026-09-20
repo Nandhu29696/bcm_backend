@@ -51,6 +51,7 @@ class PlanVersionScopedMixin(ScopedQuerySetMixin):
             "plan__cost_code",
             "plan__cost_code__estate",
             "plan__cost_code__process",
+            "plan__cost_code__bu_lead",
             "approved_by",
             "created_by",
         ).prefetch_related(

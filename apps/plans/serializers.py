@@ -170,8 +170,7 @@ class CostCodeUpdateSerializer(serializers.ModelSerializer):
             and location.region_id != region.region_id
         ):
             errors["location"] = (
-                f"'{location.location_name}' is in a different region to "
-                f"'{region.region_name}'."
+                f"'{location.location_name}' is in a different region to '{region.region_name}'."
             )
 
         if (
@@ -203,6 +202,16 @@ class PlanVersionSerializer(serializers.ModelSerializer):
     # So the editor can link back to the cost code page without a second lookup.
     cost_code_id = serializers.IntegerField(source="plan.cost_code_id", read_only=True)
     cost_code = serializers.CharField(source="plan.cost_code.cost_code", read_only=True)
+    # The editor's context strip: what the plan is for, without a second lookup.
+    process_name = serializers.CharField(
+        source="plan.cost_code.process.process_name", default="", read_only=True
+    )
+    estate_name = serializers.CharField(
+        source="plan.cost_code.estate.estate_name", default="", read_only=True
+    )
+    bu_lead_name = serializers.CharField(
+        source="plan.cost_code.bu_lead.lead_name", default="", read_only=True
+    )
 
     class Meta:
         model = PlanVersion
@@ -211,6 +220,9 @@ class PlanVersionSerializer(serializers.ModelSerializer):
             "plan_id",
             "cost_code_id",
             "cost_code",
+            "process_name",
+            "estate_name",
+            "bu_lead_name",
             "version_number",
             "status",
             "plan_mode",
@@ -281,6 +293,8 @@ class CoordinatorAssignmentSerializer(serializers.ModelSerializer):
     employee = serializers.PrimaryKeyRelatedField(queryset=Employee.objects.all())
     name = serializers.CharField(source="employee.full_name", read_only=True)
     email = serializers.CharField(source="employee.email", read_only=True)
+    # Write-only: take the role over from whoever holds it (see assign_coordinator).
+    replace = serializers.BooleanField(required=False, default=False, write_only=True)
 
     class Meta:
         model = CoordinatorAssignment
@@ -292,6 +306,7 @@ class CoordinatorAssignmentSerializer(serializers.ModelSerializer):
             "email",
             "coordinator_type",
             "additional_user_flag",
+            "replace",
         ]
         read_only_fields = ["coordinator_assignment_id", "plan_version_id"]
 

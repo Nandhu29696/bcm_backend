@@ -15,8 +15,8 @@ from django.conf import settings
 
 
 def legacy_table_path(filename: str) -> Path:
-    """Absolute path to a CSV in the repo's `tables/` directory."""
-    return Path(settings.REPO_ROOT) / "tables" / filename
+    """Absolute path to a CSV in the legacy `tables/` directory (settings.LEGACY_TABLES_DIR)."""
+    return Path(settings.LEGACY_TABLES_DIR) / filename
 
 
 def read_legacy_csv(filename: str) -> list[dict[str, str]]:

@@ -50,7 +50,8 @@ class ReadinessView(PlanVersionScopedMixin, APIView):
 
     def get(self, request, *args, **kwargs):
         version = self.get_plan_version()
-        blockers = workflow.incomplete_sections(version) if version.is_editable else []
+        metrics = workflow.completion_metrics(version)
+        blockers = metrics["incomplete_sections"] if version.is_editable else []
         is_approver = self.caller_may_approve(version)
         return Response(
             {
@@ -63,6 +64,9 @@ class ReadinessView(PlanVersionScopedMixin, APIView):
                 "is_approver": is_approver,
                 "is_author": self.caller_may_author(version),
                 "incomplete_sections": blockers,
+                "completed_sections": metrics["completed_sections"],
+                "total_sections": metrics["total_sections"],
+                "completion_percent": metrics["completion_percent"],
             }
         )
 

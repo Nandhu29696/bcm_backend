@@ -14,6 +14,7 @@ import logging
 from django.db import transaction
 
 from apps.accounts.services import record_audit
+from apps.core.exceptions import DomainError
 from apps.core.models import AuditLog
 from apps.notifications.models import NotificationEvent
 from apps.notifications.services import build_idempotency_key, send_notification
@@ -89,6 +90,35 @@ def notify_coordinator_assigned(assignment: CoordinatorAssignment, *, actor=None
     )
 
 
+class RoleAlreadyHeld(DomainError):
+    """Someone else already holds this role on the version. Surfaces as 409 so
+    the client can ask whether to replace them and retry with `replace=True`."""
+
+    status_code = 409
+    default_code = "role_already_held"
+
+    def __init__(self, holders: list[CoordinatorAssignment], coordinator_type: str):
+        names = ", ".join(h.employee.full_name for h in holders)
+        role = coordinator_type or "coordinator"
+        super().__init__(
+            f"{names} already holds the {role} role on this version. "
+            "Replace them, or choose another role."
+        )
+        self.holders = holders
+
+
+def current_role_holders(
+    plan_version: PlanVersion, coordinator_type: str, *, excluding=None
+) -> list[CoordinatorAssignment]:
+    """Active assignments of this role on the version, other than `excluding`."""
+    rows = CoordinatorAssignment.objects.filter(
+        plan_version=plan_version, coordinator_type=coordinator_type, active_flag=True
+    ).select_related("employee")
+    if excluding is not None:
+        rows = rows.exclude(employee=excluding)
+    return list(rows)
+
+
 @transaction.atomic
 def assign_coordinator(
     *,
@@ -96,16 +126,29 @@ def assign_coordinator(
     employee,
     coordinator_type: str = "",
     additional_user_flag: bool = False,
+    replace: bool = False,
     actor=None,
     request=None,
 ) -> CoordinatorAssignment:
     """Assign a coordinator to a plan version and notify them.
+
+    One person per role: a version has one Primary, one Backup, and so on. If
+    someone else already holds the role this raises `RoleAlreadyHeld` unless
+    `replace` is set, in which case the current holder is removed (soft-deleted,
+    audited) and the new person takes the role.
 
     Re-assigning someone previously removed reactivates the existing row rather
     than creating a second one — the unique constraint on
     (plan_version, employee, coordinator_type) would reject the insert, and a soft
     delete must be reversible without leaving a hole in the audit trail.
     """
+    holders = current_role_holders(plan_version, coordinator_type, excluding=employee)
+    if holders:
+        if not replace:
+            raise RoleAlreadyHeld(holders, coordinator_type)
+        for holder in holders:
+            remove_coordinator(holder, actor=actor, request=request, replaced_by=employee)
+
     assignment, created = CoordinatorAssignment.all_objects.get_or_create(
         plan_version=plan_version,
         employee=employee,
@@ -152,18 +195,24 @@ def assign_coordinator(
 
 
 @transaction.atomic
-def remove_coordinator(assignment: CoordinatorAssignment, *, actor=None, request=None) -> None:
+def remove_coordinator(
+    assignment: CoordinatorAssignment, *, actor=None, request=None, replaced_by=None
+) -> None:
     """Soft-delete an assignment (AD-6). History must still show it existed."""
     assignment.soft_delete()
+    detail = {
+        "plan_version_id": assignment.plan_version_id,
+        "employee_id": assignment.employee_id,
+        "coordinator_type": assignment.coordinator_type,
+    }
+    if replaced_by is not None:
+        detail["replaced_by_employee_id"] = replaced_by.pk
     record_audit(
         action=AuditLog.Action.RECORD_DELETED,
         actor=actor,
         entity_type="CoordinatorAssignment",
         entity_id=assignment.pk,
-        detail={
-            "plan_version_id": assignment.plan_version_id,
-            "employee_id": assignment.employee_id,
-        },
+        detail=detail,
         request=request,
     )
 

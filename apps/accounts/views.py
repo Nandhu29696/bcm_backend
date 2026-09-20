@@ -30,7 +30,7 @@ from apps.accounts.models import (
     UserRole,
 )
 from apps.accounts.employee_import import TEMPLATE_HEADERS, import_employees
-from apps.accounts.permissions import IsActiveUser, IsAdmin
+from apps.accounts.permissions import CanBrowseEmployeeDirectory, IsActiveUser, IsAdmin
 from apps.accounts.serializers import (
     CurrentUserSerializer,
     EmployeeSummarySerializer,
@@ -638,7 +638,7 @@ class EmployeeLookupViewSet(
 
     queryset = Employee.objects.order_by("full_name")
     serializer_class = EmployeeSummarySerializer
-    permission_classes = [IsAuthenticated, IsActiveUser]
+    permission_classes = [IsAuthenticated, IsActiveUser, CanBrowseEmployeeDirectory]
     search_fields = ["full_name", "email", "employee_number"]
     filterset_fields = ["employee_number"]
 
