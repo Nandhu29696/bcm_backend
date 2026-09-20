@@ -54,5 +54,6 @@ auth_patterns = [
 
 urlpatterns = [
     path("auth/", include((auth_patterns, "auth"))),
+    path("admin/employees/bulk-upload/", views.EmployeeBulkUploadView.as_view(), name="admin-employee-bulk-upload"),
     path("", include(router.urls)),
 ]

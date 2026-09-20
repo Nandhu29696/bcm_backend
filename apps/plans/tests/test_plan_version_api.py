@@ -254,6 +254,52 @@ def test_reassigning_the_same_person_does_not_send_a_second_email(
     )
 
 
+# --------------------------------------------------------------------------- #
+# One person per role
+# --------------------------------------------------------------------------- #
+
+
+def test_a_role_already_held_is_refused_until_replace_is_asked_for(
+    assign, approved_version, employee, other_employee
+):
+    """Arun is Primary. Meera cannot also be Primary — unless she takes it over."""
+    refused = assign(approved_version, other_employee, coordinator_type="Primary")
+    assert refused.status_code == 409
+    assert refused.data["code"] == "role_already_held"
+    assert "Arun Coordinator" in refused.data["detail"]
+    assert not CoordinatorAssignment.objects.filter(
+        plan_version=approved_version, employee=other_employee
+    ).exists()
+
+    mail.outbox.clear()
+    replaced = assign(approved_version, other_employee, coordinator_type="Primary", replace=True)
+    assert replaced.status_code == 201
+
+    active = CoordinatorAssignment.objects.filter(
+        plan_version=approved_version, coordinator_type="Primary", active_flag=True
+    )
+    assert [a.employee_id for a in active] == [other_employee.pk]
+    # The old holder is soft-deleted, not gone, and the audit says who took over.
+    old = CoordinatorAssignment.all_objects.get(
+        plan_version=approved_version, employee=employee, coordinator_type="Primary"
+    )
+    assert old.active_flag is False
+    entry = AuditLog.objects.filter(
+        entity_type="CoordinatorAssignment", entity_id=old.pk, action=AuditLog.Action.RECORD_DELETED
+    ).latest("created_at")
+    assert entry.detail["replaced_by_employee_id"] == other_employee.pk
+    # Only the new holder is mailed.
+    assert [m.to for m in mail.outbox] == [["meera.analyst@example.com"]]
+
+
+def test_a_different_role_never_conflicts(assign, approved_version, other_employee):
+    assert assign(approved_version, other_employee, coordinator_type="Backup").status_code == 201
+
+
+def test_the_same_person_in_the_same_role_is_not_a_conflict(assign, approved_version, employee):
+    assert assign(approved_version, employee, coordinator_type="Primary").status_code == 201
+
+
 def test_a_coordinator_with_no_email_is_skipped_not_an_error(assign, approved_version):
     """A missing address is a data gap, not a reason to refuse the assignment."""
     nameless = Employee.objects.create(

@@ -70,6 +70,9 @@ class IsAdmin(HasAnyRole):
     message = "Administrator role required."
 
 
+CanBrowseEmployeeDirectory = role_required(RoleCode.ADMIN, RoleCode.BU_LEAD)
+
+
 class IsActiveUser(BasePermission):
     """Reject accounts that are not in an active domain state.
 

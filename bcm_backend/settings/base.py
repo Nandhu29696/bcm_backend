@@ -12,12 +12,18 @@ from pathlib import Path
 
 import environ
 
-# bcm_backend/bcm_backend/settings/base.py -> repo root is four levels up.
+# bcm_backend/bcm_backend/settings/base.py -> the backend root is three levels up.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-REPO_ROOT = BASE_DIR.parent
 
 env = environ.Env()
 environ.Env.read_env(BASE_DIR / ".env")
+
+
+# The legacy CSV exports the seed commands read (`tables/`). They sit beside the
+# backend, outside this repository, since the repository root moved down to
+# the backend; point LEGACY_TABLES_DIR elsewhere on a host laid out differently.
+LEGACY_TABLES_DIR = Path(env("LEGACY_TABLES_DIR", default=str(BASE_DIR.parent / "tables")))
+
 
 
 # --------------------------------------------------------------------------- #

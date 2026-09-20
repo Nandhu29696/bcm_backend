@@ -162,7 +162,15 @@ class CostCodePlanVersionsView(ScopedQuerySetMixin, APIView):
 
         versions = (
             PlanVersion.objects.filter(plan=plan)
-            .select_related("approved_by", "created_by", "plan", "plan__cost_code")
+            .select_related(
+                "approved_by",
+                "created_by",
+                "plan",
+                "plan__cost_code",
+                "plan__cost_code__process",
+                "plan__cost_code__estate",
+                "plan__cost_code__bu_lead",
+            )
             .prefetch_related(
                 Prefetch(
                     "coordinator_assignments",
@@ -315,6 +323,7 @@ class CoordinatorAssignmentListView(PlanVersionScopedMixin, ListCreateAPIView):
             employee=serializer.validated_data["employee"],
             coordinator_type=serializer.validated_data.get("coordinator_type", ""),
             additional_user_flag=serializer.validated_data.get("additional_user_flag", False),
+            replace=serializer.validated_data.get("replace", False),
             actor=request.user,
             request=request,
         )

@@ -7,7 +7,7 @@
 # end-of-life in December 2025.
 
 # --- Core framework ---
-Django
+Django>=5.2,<6
 asgiref
 sqlparse
 tzdata

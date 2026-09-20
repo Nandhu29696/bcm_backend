@@ -153,12 +153,13 @@ def _move(version: PlanVersion, to_status: str, *, actor, comments: str) -> Plan
     return locked
 
 
-def incomplete_sections(version: PlanVersion) -> list[dict]:
-    """Sections that would block submission, freshly recomputed."""
+def completion_metrics(version: PlanVersion) -> dict:
+    """Return section completion from the questionnaire source of truth."""
     from apps.assessments.models import SectionStatusValue
     from apps.questionnaire.services import recompute_section_statuses
 
-    return [
+    summaries = list(recompute_section_statuses(version))
+    incomplete = [
         {
             "section_id": s.section.section_id,
             "section_name": s.section.section_name,
@@ -166,9 +167,22 @@ def incomplete_sections(version: PlanVersion) -> list[dict]:
             "required_answered": s.required_answered,
             "required_visible": s.required_visible,
         }
-        for s in recompute_section_statuses(version)
+        for s in summaries
         if s.status != SectionStatusValue.COMPLETED
     ]
+    total = len(summaries)
+    completed = total - len(incomplete)
+    return {
+        "completed_sections": completed,
+        "total_sections": total,
+        "completion_percent": round(100 * completed / total) if total else 0,
+        "incomplete_sections": incomplete,
+    }
+
+
+def incomplete_sections(version: PlanVersion) -> list[dict]:
+    """Sections that would block submission, freshly recomputed."""
+    return completion_metrics(version)["incomplete_sections"]
 
 
 @transaction.atomic
