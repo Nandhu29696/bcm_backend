@@ -210,13 +210,14 @@ class Command(BaseCommand):
         self.stdout.write(f"  sections: {len(sections)}")
         return sections
 
-    def _seed_questions(self, sections: dict[int, Section]) -> dict[int, Question]:
-        questions: dict[int, Question] = {}
+    def _seed_questions(self, sections: dict[int, Section]) -> dict[int | str, Question]:
+        questions: dict[int | str, Question] = {}
         unspecified = []
 
         for row in read_legacy_csv("static_BCM_Sections_Questions.csv"):
             legacy_id = to_int(row.get("ID"))
-            section = sections.get(to_int(row.get("Section_ID")))
+            section_id = to_int(row.get("Section_ID"))
+            section = sections.get(section_id) if section_id is not None else None
             if legacy_id is None or section is None:
                 continue
 
@@ -290,10 +291,14 @@ class Command(BaseCommand):
                 },
             )
 
-    def _wire_dependencies(self, questions: dict[int, Question]):
+    def _wire_dependencies(self, questions: dict[int | str, Question]):
         """Second pass — a question can depend on one created later."""
         wired = 0
-        for key, spec in {**ANSWER_SPEC, **ADDED_QUESTIONS}.items():
+        all_specs: dict[int | str, dict] = {
+            **{k: v for k, v in ANSWER_SPEC.items()},
+            **{k: v for k, v in ADDED_QUESTIONS.items()},
+        }
+        for key, spec in all_specs.items():
             dependency = spec.get("depends_on")
             question = questions.get(key)
             if not dependency or question is None:

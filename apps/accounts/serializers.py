@@ -106,14 +106,6 @@ class OtpResendSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
 
-class RefreshSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
-
-
-class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
-
-
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 

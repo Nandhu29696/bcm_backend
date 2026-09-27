@@ -63,7 +63,7 @@ class TestMfaSwitch:
 
         signed_in = login(alice.email)
         assert signed_in.status_code == 200 and signed_in.data["otp_required"] is False
-        assert signed_in.data["access"] and signed_in.data["refresh"]
+        assert signed_in.cookies["bcm_access"].value and signed_in.cookies["bcm_refresh"].value
         assert mail.outbox == []
         audit = AuditLog.objects.filter(
             action=AuditLog.Action.LOGIN_SUCCESS, entity_id=alice.pk

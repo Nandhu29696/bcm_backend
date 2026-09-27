@@ -162,7 +162,8 @@ def test_callback_creates_a_pending_account_when_no_employee_matches(api_client)
     body = response.json()
     assert body["new_account"] is True
     assert body["user_status"] == UserAccount.Status.PENDING
-    assert "access" in body
+    assert "access" not in body
+    assert response.cookies["bcm_access"].value
 
     user = UserAccount.objects.get(email="person@example.com")
     assert user.employee is None
@@ -175,14 +176,14 @@ def test_callback_creates_a_pending_account_when_no_employee_matches(api_client)
 def test_pending_sso_user_resolves_to_empty_scope_not_an_error(api_client):
     """Exit criterion: such a user must see an empty dashboard, never a 500."""
     with patch("apps.accounts.sso.requests.post", return_value=FakeTokenResponse(google_claims())):
-        tokens = callback(api_client).json()
+        callback(api_client)
 
     user = UserAccount.objects.get(email="person@example.com")
     scope = ScopeResolver(user)
     assert scope.estate_ids == frozenset()
     assert scope.sees_all_estates is False
 
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+    # Same client instance: the auth cookie the callback set rides along.
     me = api_client.get(reverse("accounts:auth:me"))
     assert me.status_code == 200
     assert me.json()["user_status"] == UserAccount.Status.PENDING

@@ -156,7 +156,7 @@ class CallTreeMember(models.Model):
 
     @property
     def reporting_manager_email(self) -> str:
-        return self.cmsc_member.reporting_manager_email if self.cmsc_member_id else ""
+        return self.cmsc_member.reporting_manager_email if self.cmsc_member is not None else ""
 
 
 class CallAttempt(models.Model):

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+from django.db import models
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
@@ -95,7 +96,7 @@ class RegenerateView(PlanVersionScopedMixin, APIView):
 
 
 #: How each attachable entity reaches an estate, for the scope check below.
-ENTITY_ESTATE_PATHS = {
+ENTITY_ESTATE_PATHS: dict[EntityDocument.EntityType, tuple[type[models.Model] | str, str | None]] = {
     EntityDocument.EntityType.PLAN_VERSION: (PlanVersion, "plan__cost_code__estate_id"),
     EntityDocument.EntityType.TEST_OUTCOME: (
         "testing.TestOutcome",
@@ -119,13 +120,16 @@ def caller_sees_entity(scope, attachment: EntityDocument) -> bool:
             .objects.filter(pk=attachment.entity_id, requested_by=scope.user)
             .exists()
         )
-    entry = ENTITY_ESTATE_PATHS.get(attachment.entity_type)
+    entry = ENTITY_ESTATE_PATHS.get(EntityDocument.EntityType(attachment.entity_type))
     if entry is None:
         return False
     model, path = entry
     if isinstance(model, str):
         model = django_apps.get_model(model)
-    rows = model.objects.filter(pk=attachment.entity_id)
+    # `model` is a generic model reference (a string app label just resolved,
+    # or the class stored in ENTITY_ESTATE_PATHS) - real at runtime, but stubs
+    # don't synthesize `.objects` for a class not known concretely here.
+    rows = model.objects.filter(pk=attachment.entity_id)  # type: ignore[union-attr]
     if path is not None and not scope.sees_all_estates:
         rows = rows.filter(**{f"{path}__in": scope.estate_ids})
     return rows.exists()

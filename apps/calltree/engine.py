@@ -23,6 +23,8 @@ is on the record.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 import datetime as dt
 import logging
 
@@ -176,6 +178,9 @@ def next_step(member: CallTreeMember) -> tuple[str, int] | None:
 
 
 def _escalate(member: CallTreeMember) -> None:
+    # Only called after a step from next_step(), which never returns one
+    # unless escalation_level is already set.
+    assert member.escalation_level is not None
     channel, budget = STAGE_PLAN[member.escalation_level]
     if (
         member.attempts.filter(channel=channel).exclude(attempt_status=PENDING_STATUS).count()
@@ -277,6 +282,9 @@ def step_run(run_id: int) -> bool:
             continue
         execute_step(member, context)
         member.refresh_from_db()
+        # The queryset above excludes escalation_level IS NULL rows (a NULL
+        # never matches __lt), and apply_result() only ever sets it to an int.
+        assert member.escalation_level is not None
         if (
             not member.reached_flag
             and member.escalation_level < MemberStage.DONE
@@ -329,6 +337,13 @@ def complete_run(run: CallTreeRun) -> None:
         )
 
 
+class _ChannelRow(TypedDict):
+    channel: str
+    attempts: int
+    reached: int
+    statuses: dict[str, int]
+
+
 def run_report(run: CallTreeRun) -> dict:
     """Response rates by escalation level and by channel, plus the member roll."""
     members = list(run.members.prefetch_related("attempts").order_by("sequence_number"))
@@ -355,7 +370,7 @@ def run_report(run: CallTreeRun) -> dict:
             }
         )
 
-    by_channel = {}
+    by_channel: dict[str, _ChannelRow] = {}
     for member in members:
         for attempt in member.attempts.all():
             row = by_channel.setdefault(

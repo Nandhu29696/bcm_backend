@@ -7,7 +7,9 @@ from openpyxl import Workbook
 from django.http import HttpResponse
 
 from django.conf import settings
+from django.contrib.auth.models import update_last_login
 from django.contrib.auth.tokens import default_token_generator
+from django.middleware.csrf import get_token
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -29,19 +31,18 @@ from apps.accounts.models import (
     UserEstateScope,
     UserRole,
 )
-from apps.accounts.employee_import import TEMPLATE_HEADERS, import_employees
+from apps.accounts.cookies import clear_auth_cookies, set_auth_cookies
+from apps.accounts.employee_import import TEMPLATE_HEADERS, TooManyRowsError, import_employees
 from apps.accounts.permissions import CanBrowseEmployeeDirectory, IsActiveUser, IsAdmin
 from apps.accounts.serializers import (
     CurrentUserSerializer,
     EmployeeSummarySerializer,
     LoginSerializer,
-    LogoutSerializer,
     OtpResendSerializer,
     OtpVerifySerializer,
     PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
-    RefreshSerializer,
     RegistrationSerializer,
     RoleSerializer,
     UserAdminSerializer,
@@ -150,7 +151,12 @@ class LoginView(APIView):
                 },
                 request=request,
             )
-            return Response({"otp_required": False, **issue_tokens(user)})
+            update_last_login(UserAccount, user)
+            tokens = issue_tokens(user)
+            response = Response({"otp_required": False})
+            set_auth_cookies(response, tokens["access"], tokens["refresh"])
+            get_token(request)
+            return response
 
         try:
             challenge, code = issue_otp(user, OtpChallenge.Purpose.LOGIN_2FA, request=request)
@@ -238,7 +244,12 @@ class OtpVerifyView(APIView):
             detail={"mfa": True},
             request=request,
         )
-        return Response(issue_tokens(user))
+        update_last_login(UserAccount, user)
+        tokens = issue_tokens(user)
+        response = Response({"otp_required": False})
+        set_auth_cookies(response, tokens["access"], tokens["refresh"])
+        get_token(request)
+        return response
 
 
 class OtpResendView(APIView):
@@ -284,18 +295,23 @@ class RefreshView(APIView):
 
     Rotation plus blacklisting is enabled, so the presented token is invalidated
     here. The frontend must serialise concurrent refreshes or it will burn its
-    own token.
+    own token. The refresh token itself travels in the HttpOnly cookie, never
+    in the request body -- there is nothing for client JS to read or send.
     """
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
-    @extend_schema(request=RefreshSerializer, summary="Refresh an access token")
+    @extend_schema(request=None, summary="Refresh an access token")
     def post(self, request):
-        serializer = RefreshSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        raw_refresh = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
+        if not raw_refresh:
+            return Response(
+                {"detail": "No refresh token.", "code": "token_invalid", "field_errors": {}},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
         try:
-            refresh = RefreshToken(serializer.validated_data["refresh"])
+            refresh = RefreshToken(raw_refresh)
             access = str(refresh.access_token)
             if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
                 if settings.SIMPLE_JWT.get("BLACKLIST_AFTER_ROTATION"):
@@ -303,25 +319,33 @@ class RefreshView(APIView):
                 user = UserAccount.objects.filter(pk=refresh["user_id"]).first()
                 if user is None or not user.is_active:
                     raise TokenError("User is no longer active.")
-                return Response(issue_tokens(user))
-            return Response({"access": access})
+                tokens = issue_tokens(user)
+                response = Response({"detail": "ok"})
+                set_auth_cookies(response, tokens["access"], tokens["refresh"])
+                return response
+            response = Response({"detail": "ok"})
+            set_auth_cookies(response, access)
+            return response
         except TokenError as exc:
-            return Response(
+            response = Response(
                 {"detail": str(exc), "code": "token_invalid", "field_errors": {}},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+            clear_auth_cookies(response)
+            return response
 
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(request=LogoutSerializer, summary="Log out and revoke a refresh token")
+    @extend_schema(request=None, summary="Log out and revoke the refresh token")
     def post(self, request):
-        serializer = LogoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        # Already expired or blacklisted? Logging out twice is not an error.
-        with contextlib.suppress(TokenError):
-            RefreshToken(serializer.validated_data["refresh"]).blacklist()
+        raw_refresh = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
+        # Already expired, missing or blacklisted? Logging out twice is not an
+        # error -- the point is that the session ends, and it does either way.
+        if raw_refresh:
+            with contextlib.suppress(TokenError):
+                RefreshToken(raw_refresh).blacklist()
         record_audit(
             action=AuditLog.Action.LOGOUT,
             actor=request.user,
@@ -329,7 +353,9 @@ class LogoutView(APIView):
             entity_id=request.user.pk,
             request=request,
         )
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        clear_auth_cookies(response)
+        return response
 
 
 class MeView(APIView):
@@ -671,5 +697,10 @@ class EmployeeBulkUploadView(APIView):
             return Response({"detail": "Attach an Excel workbook in the file field."}, status=status.HTTP_400_BAD_REQUEST)
         if not upload.name.lower().endswith((".xlsx", ".xlsm")):
             return Response({"detail": "Only .xlsx or .xlsm workbooks are supported."}, status=status.HTTP_400_BAD_REQUEST)
-        result = import_employees(upload.read())
+        if upload.size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+            return Response({"detail": "The file is too large.", "code": "file_too_large"}, status=413)
+        try:
+            result = import_employees(upload.read())
+        except TooManyRowsError as exc:
+            return Response({"detail": str(exc), "code": "too_many_rows"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"created": result.created, "updated": result.updated, "estates_created": result.estates_created, "errors": result.errors})

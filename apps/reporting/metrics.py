@@ -126,7 +126,9 @@ def _risk(version_ids: list[int], today: dt.date) -> dict:
     likelihood = [(float(o.points), o.label) for o in rating_options("Likelihood")]
     severity = [(float(o.points), o.label) for o in rating_options("Severity Rating")]
     cells = {
-        (float(r["likelihood_rating"]), float(r["severity_rating"])): r["total"]
+        # The two excludes below guarantee neither rating is None by the time
+        # a row reaches here; mypy has no way to see that from the queryset.
+        (float(r["likelihood_rating"]), float(r["severity_rating"])): r["total"]  # type: ignore[arg-type]
         for r in risks.exclude(likelihood_rating=None)
         .exclude(severity_rating=None)
         .order_by()
@@ -156,21 +158,25 @@ def _risk(version_ids: list[int], today: dt.date) -> dict:
         "heat_map": heat_map,
         "open_actions": open_actions.count(),
         "overdue_actions": overdue.count(),
-        "overdue": [
-            {
-                "risk_action_id": a.pk,
-                "risk_name": a.risk.risk_name,
-                "cost_code": a.risk.plan_version.plan.cost_code.cost_code,
-                "cost_code_id": a.risk.plan_version.plan.cost_code_id,
-                "plan_version_id": a.risk.plan_version_id,
-                "action_type": a.action_type,
-                "status": a.status,
-                "owner": a.risk.owner_employee.full_name if a.risk.owner_employee_id else "",
-                "target_date": a.target_date.isoformat(),
-                "days_overdue": (today - a.target_date).days,
-            }
-            for a in overdue[:10]
-        ],
+        "overdue": [_overdue_row(a, today) for a in overdue[:10]],
+    }
+
+
+def _overdue_row(a: RiskAction, today: dt.date) -> dict:
+    # `target_date__lt=today` in the query this is built from can never match a
+    # NULL row, but the ORM's field type (nullable) is all mypy sees.
+    assert a.target_date is not None
+    return {
+        "risk_action_id": a.pk,
+        "risk_name": a.risk.risk_name,
+        "cost_code": a.risk.plan_version.plan.cost_code.cost_code,
+        "cost_code_id": a.risk.plan_version.plan.cost_code_id,
+        "plan_version_id": a.risk.plan_version_id,
+        "action_type": a.action_type,
+        "status": a.status,
+        "owner": a.risk.owner_employee.full_name if a.risk.owner_employee is not None else "",
+        "target_date": a.target_date.isoformat(),
+        "days_overdue": (today - a.target_date).days,
     }
 
 
@@ -181,8 +187,8 @@ def _tests(cost_codes, today: dt.date) -> dict:
     for row in tests.order_by().values("status").annotate(total=Count("test_id")):
         by_status[row["status"]] = row["total"]
     by_type = {t: 0 for t, _ in Test.TestType.choices}
-    for row in tests.order_by().values("test_type").annotate(total=Count("test_id")):
-        by_type[row["test_type"]] = row["total"]
+    for type_row in tests.order_by().values("test_type").annotate(total=Count("test_id")):
+        by_type[type_row["test_type"]] = type_row["total"]
 
     since = today - dt.timedelta(days=30 * TEST_COVERAGE_MONTHS)
     tested = (
@@ -247,7 +253,7 @@ def _call_tree(cost_codes) -> dict:
             {
                 "call_tree_run_id": r.pk,
                 "broadcast_id": r.broadcast_id,
-                "cost_code": r.cost_code.cost_code if r.cost_code_id else "",
+                "cost_code": r.cost_code.cost_code if r.cost_code is not None else "",
                 "simulation_flag": r.simulation_flag,
                 "started_at": r.started_at.isoformat() if r.started_at else None,
                 "members": len(r.members.all()),

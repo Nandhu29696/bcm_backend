@@ -195,16 +195,16 @@ class CrisisEventSerializer(serializers.ModelSerializer):
             "can_manage",
         ]
 
-    def get_process_name(self, event):
+    def get_process_name(self, event) -> str:
         return getattr(event.cost_code.process, "process_name", "")
 
-    def get_estate_name(self, event):
+    def get_estate_name(self, event) -> str:
         return getattr(event.cost_code.estate, "estate_name", "")
 
-    def get_created_by_name(self, event):
+    def get_created_by_name(self, event) -> str:
         return event.created_by.display_name if event.created_by_id else ""
 
-    def get_can_manage(self, event):
+    def get_can_manage(self, event) -> bool:
         manageable = self.context.get("manageable")
         if manageable is not None:
             return event.cost_code_id in manageable

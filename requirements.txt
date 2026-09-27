@@ -7,52 +7,56 @@
 # end-of-life in December 2025.
 
 # --- Core framework ---
-Django>=5.2,<6
-asgiref
-sqlparse
-tzdata
+Django>=5.2.17,<6
+asgiref==3.12.1
+sqlparse==0.6.0
+tzdata==2026.4
 
 # --- REST API ---
-djangorestframework
-djangorestframework_simplejwt
-django-cors-headers
-django-filter
-drf-spectacular
+djangorestframework==3.18.1
+djangorestframework_simplejwt==5.5.1
+django-cors-headers==4.9.0
+django-filter==26.1
+drf-spectacular==0.30.0
 
 # --- Configuration ---
 # django-environ is the ONE env loader (AD-11). python-dotenv is deliberately
 # absent — do not reintroduce it.
-django-environ
+django-environ==0.14.0
 
 # --- Database ---
-mysqlclient
+mysqlclient==2.3.0
 
 # --- Authentication / SSO (Phase 1) ---
-social-auth-app-django
-social-auth-core
-PyJWT
-cryptography
+social-auth-app-django==6.0.1
+social-auth-core==5.1.0
+PyJWT==2.14.0
+cryptography==50.0.1
 
 # --- Async tasks & cache ---
-celery
-redis
-django-redis
+celery==5.6.3
+redis==8.1.0
+django-redis==7.0.0
 
 # --- Security ---
-django-ratelimit
+django-ratelimit==4.1.0
 
 # --- Misc ---
-pillow
-requests
-python-docx
-reportlab
-openpyxl
-et-xmlfile
+pillow==12.3.0
+requests==2.34.2
+python-docx==1.2.0
+reportlab==5.0.1
+openpyxl==3.1.5
+et-xmlfile==2.0.0
 
 # --- Production runtime and observability (Phase 10) ---
-gunicorn
-sentry-sdk
+gunicorn==26.2.0
+sentry-sdk==2.69.2
 
 # --- Browser push notifications ---
-pywebpush
-py-vapid
+pywebpush==2.5.0
+py-vapid==1.9.4
+
+# Pinned to what is verified working (2026-09-23) so `pip install -r` is
+# reproducible; transitive dependencies still float. Bump deliberately, not
+# by installing something newer and forgetting to update this file.

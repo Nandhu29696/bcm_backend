@@ -259,7 +259,7 @@ OAUTH_STATE_TTL_SECONDS = env.int("OAUTH_STATE_TTL_SECONDS", default=600)
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.accounts.authentication.CookieJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_FILTER_BACKENDS": (
@@ -300,6 +300,15 @@ SIMPLE_JWT = {
     # staging/production can rotate JWT signing independently.
     "SIGNING_KEY": env("JWT_SIGNING_KEY", default="") or SECRET_KEY,
 }
+
+# BUG-21: tokens ride HttpOnly cookies rather than being handed to JS. Lax, not
+# Strict -- the SSO callback exchange is a same-site XHR issued right after a
+# cross-site redirect back from the identity provider, and Strict would drop
+# the cookie on the very request that needs it.
+JWT_AUTH_COOKIE = "bcm_access"
+JWT_AUTH_REFRESH_COOKIE = "bcm_refresh"
+JWT_AUTH_COOKIE_SAMESITE = env("JWT_AUTH_COOKIE_SAMESITE", default="Lax")
+JWT_AUTH_COOKIE_SECURE = env.bool("JWT_AUTH_COOKIE_SECURE", default=not DEBUG)
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "BCM Application API",
@@ -358,7 +367,18 @@ MEDIA_ROOT = BASE_DIR / env("MEDIA_ROOT", default="media")
 # It is NOT the frontend URL — pointing it at the frontend 404s every download.
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost:8000")
 
+#: No models are registered against the admin site (see apps/*/admin.py); it
+#: is a bare login form. Overridable so production can move it off the
+#: guessable default without a code change.
+ADMIN_URL_PATH = env("ADMIN_URL_PATH", default="admin/")
+if not ADMIN_URL_PATH.endswith("/"):
+    ADMIN_URL_PATH += "/"
+
 MAX_UPLOAD_SIZE_MB = env.int("MAX_UPLOAD_SIZE_MB", default=25)
+
+#: A report this wide is almost certainly a missing filter, not a real need —
+#: reject it rather than build an export nobody can open.
+MAX_REPORT_ROWS = env.int("MAX_REPORT_ROWS", default=25_000)
 ALLOWED_UPLOAD_EXTENSIONS = env.list(
     "ALLOWED_UPLOAD_EXTENSIONS",
     default=["pdf", "doc", "docx", "xls", "xlsx", "png", "jpg", "jpeg"],

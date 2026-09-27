@@ -42,7 +42,11 @@ SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = True
-CSRF_COOKIE_HTTPONLY = True
+# Not HttpOnly: the SPA reads this cookie itself to attach it as the
+# X-CSRFToken header on state-changing requests (BUG-21, double-submit
+# pattern). The value is a CSRF token, not a credential -- it authorizes
+# nothing on its own without a matching auth cookie riding along.
+CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
 
 X_FRAME_OPTIONS = "DENY"

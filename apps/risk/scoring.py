@@ -67,6 +67,8 @@ def rating_options(lookup_type: str) -> list[RatingOption]:
     for row in LookupCategory.objects.filter(
         category_type=lookup_type, points__isnull=False
     ).order_by("points", "category_name"):
+        # points__isnull=False guarantees this at the query level.
+        assert row.points is not None
         if row.points in seen:
             continue
         seen.add(row.points)

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from django.contrib.auth.models import update_last_login
+from django.middleware.csrf import get_token
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.cookies import set_auth_cookies
 from apps.accounts.models import UserAccount
 from apps.accounts.services import provision_sso_user, record_audit
 from apps.accounts.sso import (
@@ -150,11 +153,10 @@ class SsoCallbackView(APIView):
             detail={"provider": provider, "new_account": created},
             request=request,
         )
+        update_last_login(UserAccount, user)
 
-        return Response(
-            {
-                **issue_tokens(user),
-                "user_status": user.user_status,
-                "new_account": created,
-            }
-        )
+        tokens = issue_tokens(user)
+        response = Response({"user_status": user.user_status, "new_account": created})
+        set_auth_cookies(response, tokens["access"], tokens["refresh"])
+        get_token(request)
+        return response

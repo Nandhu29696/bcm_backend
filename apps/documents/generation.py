@@ -73,10 +73,14 @@ def _answer_text(question, answer) -> str:
         )
     value = answer.get("value")
     labels = {o.code: o.label for o in options_for(question)}
+
+    def label_for(code: object) -> str:
+        return labels.get(code, str(code)) if isinstance(code, str) else str(code)
+
     if isinstance(value, list):
-        text = ", ".join(labels.get(v, v) for v in value)
+        text = ", ".join(label_for(v) for v in value)
     else:
-        text = labels.get(value, str(value))
+        text = label_for(value)
     detail = answer.get("detail")
     if detail:
         detail_labels = {o.code: o.label for o in detail_options_for(question)}
@@ -132,7 +136,7 @@ def build_plan_payload(version: PlanVersion) -> dict:
         "bu_lead": getattr(cost_code.bu_lead, "lead_name", ""),
         "version_number": version.version_number,
         "status": version.status,
-        "approved_by": version.approved_by.display_name if version.approved_by_id else "",
+        "approved_by": version.approved_by.display_name if version.approved_by is not None else "",
         "approved_at": version.approved_at,
         "coordinators": [
             (
@@ -224,7 +228,7 @@ def build_plan_payload(version: PlanVersion) -> dict:
             {
                 "status": h.status,
                 "at": h.changed_at,
-                "by": h.changed_by.display_name if h.changed_by_id else "System",
+                "by": h.changed_by.display_name if h.changed_by is not None else "System",
                 "comments": h.comments,
             }
             for h in PlanStatusHistory.objects.filter(plan_version=version)

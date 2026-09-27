@@ -50,10 +50,12 @@ def avatar_data_url(upload) -> str:
     if upload.size > MAX_AVATAR_UPLOAD_BYTES:
         raise AvatarRejected("The picture is larger than 5 MB.")
     try:
-        image = Image.open(upload)
+        image: Image.Image = Image.open(upload)
         image.load()
     except (UnidentifiedImageError, OSError) as exc:
         raise AvatarRejected("That file is not an image we can read (use PNG or JPEG).") from exc
+    except Image.DecompressionBombError as exc:
+        raise AvatarRejected("That picture decodes to an implausibly large image.") from exc
     image = ImageOps.exif_transpose(image).convert("RGB")
     size = settings.AVATAR_SIZE_PX
     image = ImageOps.fit(image, (size, size), Image.Resampling.LANCZOS)

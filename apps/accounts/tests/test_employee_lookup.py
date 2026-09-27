@@ -69,7 +69,13 @@ def test_is_read_only(authenticated_client, employees):
 
 
 @pytest.mark.parametrize("role", [RoleCode.BU_LEAD, RoleCode.COORDINATOR])
-def test_directory_access_is_limited_to_admin_and_bu_lead(authenticated_client, employees, role):
+def test_directory_reachable_by_the_roles_that_use_its_pickers(authenticated_client, employees, role):
+    """Admin, BU lead and coordinator all assign coordinators or pick a section
+    owner, so all three read the directory. Everyone else is refused."""
     client, _ = authenticated_client(roles=[role])
-    response = client.get(LIST_URL)
-    assert response.status_code == (200 if role == RoleCode.BU_LEAD else 403)
+    assert client.get(LIST_URL).status_code == 200
+
+
+def test_directory_is_refused_to_roles_without_a_picker(authenticated_client, employees):
+    client, _ = authenticated_client(roles=[RoleCode.VIEWER])
+    assert client.get(LIST_URL).status_code == 403

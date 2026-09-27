@@ -29,7 +29,7 @@ class PlanVersionScopedMixin(ScopedQuerySetMixin):
     on the view's model, or skips scoping on the parent.
     """
 
-    estate_scope_path = "plan__cost_code__estate_id"
+    estate_scope_path: str | None = "plan__cost_code__estate_id"
 
     def scope_plan_versions(self, queryset):
         """Scope a queryset *of plan versions*, whatever this view's own model is."""

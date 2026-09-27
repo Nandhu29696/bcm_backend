@@ -80,7 +80,7 @@ def build_overview(version: PlanVersion) -> dict:
 
     by_code = {q.question_code: answers.get(q.question_id) for q in questions}
     raw = {
-        key: _scalar(by_code[code].answer_json) if by_code.get(code) else None
+        key: _scalar(answer.answer_json) if (answer := by_code.get(code)) else None
         for key, code in OBJECTIVE_QUESTIONS.items()
     }
     mbco_percent = _number(raw["mbco_percent"])

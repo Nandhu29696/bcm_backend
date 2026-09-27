@@ -156,14 +156,19 @@ def _clone(instance: models.Model, **overrides) -> models.Model:
 
 def _copy_relation(spec: CarriedRelation, source: PlanVersion, target: PlanVersion) -> int:
     """Copy one relation, and any grandchildren, returning the row count."""
-    rows = list(spec.model.objects.filter(plan_version=source))
+    # `spec.model`/`child.model` are `type[Model]`, the abstract base - stubs
+    # don't synthesize `.objects` for a generic model reference, only for a
+    # concrete class known at the attribute-access site. Real at runtime.
+    rows = list(spec.model.objects.filter(plan_version=source))  # type: ignore[attr-defined]
     if not rows:
         return 0
 
     if not spec.children:
         # No grandchildren, so the new primary keys are never needed. MySQL does
         # not return them from a bulk insert anyway.
-        spec.model.objects.bulk_create([_clone(row, plan_version_id=target.pk) for row in rows])
+        spec.model.objects.bulk_create(  # type: ignore[attr-defined]
+            [_clone(row, plan_version_id=target.pk) for row in rows]
+        )
         return len(rows)
 
     # Saved one at a time precisely because the new keys ARE needed, to re-parent
@@ -174,9 +179,11 @@ def _copy_relation(spec: CarriedRelation, source: PlanVersion, target: PlanVersi
         clone.save()
         total += 1
         for child in spec.children:
-            children = list(child.model.objects.filter(**{child.parent_field: row}))
+            children = list(
+                child.model.objects.filter(**{child.parent_field: row})  # type: ignore[attr-defined]
+            )
             if children:
-                child.model.objects.bulk_create(
+                child.model.objects.bulk_create(  # type: ignore[attr-defined]
                     [
                         _clone(grandchild, **{f"{child.parent_field}_id": clone.pk})
                         for grandchild in children

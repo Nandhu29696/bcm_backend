@@ -14,7 +14,7 @@ class ActiveQuerySet(models.QuerySet):
         return self.filter(active_flag=False)
 
 
-class ActiveManager(models.Manager.from_queryset(ActiveQuerySet)):
+class ActiveManager(models.Manager.from_queryset(ActiveQuerySet)):  # type: ignore[misc]
     """Default manager that hides soft-deleted rows."""
 
     def get_queryset(self):

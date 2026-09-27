@@ -39,7 +39,7 @@ def _attempt(log: NotificationLog, render_context: dict) -> Exception | None:
         # using="text_email" selects the non-autoescaping engine. Rendering a
         # text/plain body through the default engine turns "&" into "&amp;" and
         # breaks every multi-parameter URL in it.
-        body = render_to_string(
+        body: str = render_to_string(
             f"notifications/{log.template_name}.txt", render_context, using="text_email"
         )
         to = [log.to_email]

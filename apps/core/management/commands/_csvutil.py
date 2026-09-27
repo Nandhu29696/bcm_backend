@@ -38,7 +38,7 @@ def read_legacy_csv(filename: str) -> list[dict[str, str]]:
     return rows
 
 
-def to_int(value: str) -> int | None:
+def to_int(value: str | None) -> int | None:
     try:
         return int(str(value).strip())
     except (TypeError, ValueError):

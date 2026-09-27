@@ -1,0 +1,12 @@
+# Development-only tooling — not needed to run the app, only to check it.
+#   .venv/Scripts/python -m pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+mypy==2.3.1
+django-stubs==6.1.1
+djangorestframework-stubs==3.18.1
+
+# mypy needs --explicit-package-bases to run at all: the repo root doubles as
+# a Django project name (bcm_backend/) and mypy's default module-root
+# inference gets confused by that. See docs/BCM_Bug_Tracker.xlsx, BUG-34.
+#   .venv/Scripts/python -m mypy apps --explicit-package-bases

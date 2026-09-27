@@ -42,12 +42,24 @@ def login(client, email=..., password=PASSWORD):
 
 
 @override_settings(REQUIRE_OTP_FOR_LOGIN=False)
-def test_login_without_otp_returns_tokens(api_client, local_user):
+def test_login_without_otp_sets_auth_cookies(api_client, local_user):
     response = login(api_client)
     assert response.status_code == 200
     assert response.json()["otp_required"] is False
-    assert "access" in response.json()
-    assert "refresh" in response.json()
+    assert "access" not in response.json()
+    assert "refresh" not in response.json()
+    assert response.cookies["bcm_access"].value
+    assert response.cookies["bcm_access"]["httponly"]
+    assert response.cookies["bcm_refresh"].value
+    assert response.cookies["bcm_refresh"]["httponly"]
+
+
+@override_settings(REQUIRE_OTP_FOR_LOGIN=False)
+def test_login_records_last_login(api_client, local_user):
+    assert local_user.last_login is None
+    login(api_client)
+    local_user.refresh_from_db()
+    assert local_user.last_login is not None
 
 
 @override_settings(REQUIRE_OTP_FOR_LOGIN=False)
@@ -120,6 +132,7 @@ def test_login_with_otp_emails_a_code_and_withholds_tokens(api_client, local_use
     assert response.status_code == 200
     assert response.json()["otp_required"] is True
     assert "access" not in response.json()
+    assert "bcm_access" not in response.cookies
     assert len(mail.outbox) == 1
     assert OtpChallenge.objects.filter(user=local_user, consumed_at=None).count() == 1
 
@@ -132,7 +145,7 @@ def _extract_code(message) -> str:
 
 
 @override_settings(REQUIRE_OTP_FOR_LOGIN=True)
-def test_valid_otp_returns_tokens(api_client, local_user):
+def test_valid_otp_sets_auth_cookies(api_client, local_user):
     mail.outbox.clear()
     login(api_client)
     code = _extract_code(mail.outbox[0])
@@ -143,7 +156,25 @@ def test_valid_otp_returns_tokens(api_client, local_user):
         format="json",
     )
     assert response.status_code == 200
-    assert "access" in response.json()
+    assert "access" not in response.json()
+    assert response.cookies["bcm_access"].value
+    assert response.cookies["bcm_refresh"].value
+
+
+@override_settings(REQUIRE_OTP_FOR_LOGIN=True)
+def test_otp_verify_records_last_login(api_client, local_user):
+    assert local_user.last_login is None
+    mail.outbox.clear()
+    login(api_client)
+    code = _extract_code(mail.outbox[0])
+
+    api_client.post(
+        reverse("accounts:auth:otp-verify"),
+        {"email": local_user.email, "code": code},
+        format="json",
+    )
+    local_user.refresh_from_db()
+    assert local_user.last_login is not None
 
 
 @override_settings(REQUIRE_OTP_FOR_LOGIN=True)
@@ -216,35 +247,72 @@ def test_otp_resend_does_not_reveal_unknown_accounts(api_client):
 
 @override_settings(REQUIRE_OTP_FOR_LOGIN=False)
 def test_refresh_rotation_invalidates_the_old_token(api_client, local_user):
-    tokens = login(api_client).json()
+    login(api_client)
+    old_refresh = api_client.cookies["bcm_refresh"].value
     url = reverse("accounts:auth:refresh")
 
-    rotated = api_client.post(url, {"refresh": tokens["refresh"]}, format="json")
+    rotated = api_client.post(url)
     assert rotated.status_code == 200
-    assert rotated.json()["refresh"] != tokens["refresh"]
+    assert api_client.cookies["bcm_refresh"].value != old_refresh
 
     # The original is blacklisted and must not work a second time.
-    replay = api_client.post(url, {"refresh": tokens["refresh"]}, format="json")
+    api_client.cookies["bcm_refresh"] = old_refresh
+    replay = api_client.post(url)
     assert replay.status_code == 401
 
 
 @override_settings(REQUIRE_OTP_FOR_LOGIN=False)
+def test_refresh_does_not_update_last_login(api_client, local_user):
+    """Silent token rotation is not a sign-in -- see apps/accounts/views.py."""
+    login(api_client)
+    local_user.refresh_from_db()
+    first_login = local_user.last_login
+
+    api_client.post(reverse("accounts:auth:refresh"))
+    local_user.refresh_from_db()
+    assert local_user.last_login == first_login
+
+
+@override_settings(REQUIRE_OTP_FOR_LOGIN=False)
 def test_logout_revokes_the_refresh_token(api_client, local_user):
-    tokens = login(api_client).json()
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+    login(api_client)
+    refresh_token = api_client.cookies["bcm_refresh"].value
+    csrf_token = api_client.cookies["csrftoken"].value
 
     assert (
         api_client.post(
-            reverse("accounts:auth:logout"), {"refresh": tokens["refresh"]}, format="json"
+            reverse("accounts:auth:logout"), HTTP_X_CSRFTOKEN=csrf_token
         ).status_code
         == 204
     )
 
-    api_client.credentials()
-    replay = api_client.post(
-        reverse("accounts:auth:refresh"), {"refresh": tokens["refresh"]}, format="json"
-    )
+    # Logout also cleared the cookie client-side; put the (now blacklisted)
+    # token back to prove it no longer works, not just that it is gone.
+    api_client.cookies["bcm_refresh"] = refresh_token
+    replay = api_client.post(reverse("accounts:auth:refresh"))
     assert replay.status_code == 401
+
+
+@override_settings(REQUIRE_OTP_FOR_LOGIN=False)
+def test_cookie_auth_requires_csrf_header_on_state_changing_requests(local_user):
+    """The exposure a bearer-token header never had (docs/GO_LIVE_CHECKLIST.md §6).
+
+    `api_client` normally runs with CSRF checks off, like any Django test
+    client -- this test turns them on to prove the protection is real.
+    """
+    from rest_framework.test import APIClient
+
+    strict_client = APIClient(enforce_csrf_checks=True)
+    login(strict_client)
+
+    no_header = strict_client.post(reverse("accounts:auth:logout"))
+    assert no_header.status_code == 403
+
+    csrf_token = strict_client.cookies["csrftoken"].value
+    with_header = strict_client.post(
+        reverse("accounts:auth:logout"), HTTP_X_CSRFTOKEN=csrf_token
+    )
+    assert with_header.status_code == 204
 
 
 @override_settings(REQUIRE_OTP_FOR_LOGIN=False)

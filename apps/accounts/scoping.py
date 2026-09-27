@@ -30,9 +30,18 @@ disguising it as a failed login.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from django.db.models import Q, QuerySet
 
 from apps.accounts.roles import ALL_ESTATE_ROLES, ESTATE_WIDE_ROLES, OWN_RECORD_ROLES, RoleCode
+
+if TYPE_CHECKING:
+    from rest_framework.generics import GenericAPIView
+
+    _Base = GenericAPIView[Any]
+else:
+    _Base = object
 
 
 class ScopeResolver:
@@ -137,7 +146,7 @@ class ScopeResolver:
         return f"<ScopeResolver {who} roles={sorted(self.role_codes)} estates={scope}>"
 
 
-class ScopedQuerySetMixin:
+class ScopedQuerySetMixin(_Base):
     """Filter a viewset's queryset to what the caller may see.
 
     Declare how the model reaches an estate:

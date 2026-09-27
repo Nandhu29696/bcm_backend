@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.accounts.models import Employee
@@ -15,7 +16,7 @@ from apps.organization.models import (
     Region,
     Subprocess,
 )
-from apps.organization.serializers import named_ref
+from apps.organization.serializers import NamedRefSerializer, named_ref
 from apps.plans.models import CoordinatorAssignment, PlanStatusHistory, PlanVersion
 
 
@@ -49,27 +50,35 @@ class CostCodeDetailSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    @extend_schema_field(NamedRefSerializer(allow_null=True))
     def get_process(self, obj):
         return named_ref(obj.process, "process_id", "process_name")
 
+    @extend_schema_field(NamedRefSerializer(allow_null=True))
     def get_subprocess(self, obj):
         return named_ref(obj.subprocess, "subprocess_id", "subprocess_name")
 
+    @extend_schema_field(NamedRefSerializer(allow_null=True))
     def get_region(self, obj):
         return named_ref(obj.region, "region_id", "region_name")
 
+    @extend_schema_field(NamedRefSerializer(allow_null=True))
     def get_bu_lead(self, obj):
         return named_ref(obj.bu_lead, "bu_lead_id", "lead_name")
 
+    @extend_schema_field(NamedRefSerializer(allow_null=True))
     def get_lob(self, obj):
         return named_ref(obj.lob, "lob_id", "lob_name")
 
+    @extend_schema_field(NamedRefSerializer(allow_null=True))
     def get_center(self, obj):
         return named_ref(obj.center, "center_id", "center_name")
 
+    @extend_schema_field(NamedRefSerializer(allow_null=True))
     def get_location(self, obj):
         return named_ref(obj.location, "location_id", "location_name")
 
+    @extend_schema_field(NamedRefSerializer(allow_null=True))
     def get_estate(self, obj):
         return named_ref(obj.estate, "estate_id", "estate_name")
 

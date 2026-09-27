@@ -118,7 +118,10 @@ class UserNotification(models.Model):
 
     class Meta:
         db_table = "user_notifications"
-        ordering = ["-created_at"]
+        # `-user_notification_id` breaks ties: two notifications written in the
+        # same request land on the same `created_at` tick, and an ORDER BY on a
+        # tied column alone does not guarantee a stable result.
+        ordering = ["-created_at", "-user_notification_id"]
         indexes = [
             models.Index(fields=["user", "read_at", "created_at"], name="idx_usernotif_user_read")
         ]

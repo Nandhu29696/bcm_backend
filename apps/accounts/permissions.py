@@ -70,7 +70,10 @@ class IsAdmin(HasAnyRole):
     message = "Administrator role required."
 
 
-CanBrowseEmployeeDirectory = role_required(RoleCode.ADMIN, RoleCode.BU_LEAD)
+#: Matches CanAssignCoordinator's role set: the directory is the picker behind
+#: coordinator assignment and the plan-section owner field, both of which a
+#: coordinator can use, so read access has to reach as far as that write does.
+CanBrowseEmployeeDirectory = role_required(RoleCode.ADMIN, RoleCode.BU_LEAD, RoleCode.COORDINATOR)
 
 
 class IsActiveUser(BasePermission):

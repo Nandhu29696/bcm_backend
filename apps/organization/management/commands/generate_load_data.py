@@ -198,7 +198,7 @@ class Command(BaseCommand):
             self.stdout.write("Plan versions already present; skipping.")
             return
 
-        pending = []
+        pending_versions: list[PlanVersion] = []
         for count, plan_id in enumerate(plan_ids, start=1):
             for version_number in range(1, versions_per_plan + 1):
                 # Only the newest version's status is ever read by the list, so
@@ -208,15 +208,15 @@ class Command(BaseCommand):
                     if version_number == versions_per_plan
                     else PlanStatus.APPROVED
                 )
-                pending.append(
+                pending_versions.append(
                     PlanVersion(plan_id=plan_id, version_number=version_number, status=status)
                 )
-            if len(pending) >= BATCH:
-                PlanVersion.objects.bulk_create(pending)
-                pending = []
+            if len(pending_versions) >= BATCH:
+                PlanVersion.objects.bulk_create(pending_versions)
+                pending_versions = []
                 self.stdout.write(f"  plan versions: {count:,}/{len(plan_ids):,}", ending="\r")
-        if pending:
-            PlanVersion.objects.bulk_create(pending)
+        if pending_versions:
+            PlanVersion.objects.bulk_create(pending_versions)
         self.stdout.write("")
 
     # ------------------------------------------------------------------ clear

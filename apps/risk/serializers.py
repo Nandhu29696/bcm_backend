@@ -148,13 +148,13 @@ class RiskSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["risk_id", "plan_version_id"]
 
-    def get_likelihood_label(self, risk):
+    def get_likelihood_label(self, risk) -> str | None:
         return label_for(RATING_TYPES["likelihood_rating"], risk.likelihood_rating)
 
-    def get_severity_label(self, risk):
+    def get_severity_label(self, risk) -> str | None:
         return label_for(RATING_TYPES["severity_rating"], risk.severity_rating)
 
-    def get_control_effectiveness_label(self, risk):
+    def get_control_effectiveness_label(self, risk) -> str | None:
         return label_for(
             RATING_TYPES["control_effectiveness_rating"], risk.control_effectiveness_rating
         )

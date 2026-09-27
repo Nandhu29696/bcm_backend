@@ -49,3 +49,4 @@ blob-report/
 # Local convenience sheet of seeded demo accounts (dev only, not for the repo)
 demo_logins.xlsx
 backups/
+*.sql

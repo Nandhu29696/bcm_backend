@@ -231,7 +231,7 @@ def create_event(
 
 
 def _move(event: CrisisEvent, to_status: str, *, actor) -> CrisisEvent:
-    if to_status not in EVENT_TRANSITIONS[event.status]:
+    if to_status not in EVENT_TRANSITIONS[CrisisEvent.Status(event.status)]:
         raise InvalidStateTransition(
             f"A crisis event cannot move from {event.status} to {to_status}."
         )
@@ -251,7 +251,7 @@ def _move(event: CrisisEvent, to_status: str, *, actor) -> CrisisEvent:
 @transaction.atomic
 def initiate_event(event: CrisisEvent, *, actor, simulation: bool) -> CrisisEvent:
     """Declare the event and start the call tree over the roster."""
-    if event.call_tree_run_id and event.call_tree_run.status in ("PENDING", "RUNNING"):
+    if event.call_tree_run is not None and event.call_tree_run.status in ("PENDING", "RUNNING"):
         raise CallTreeAlreadyRunning()
     if event.status == CrisisEvent.Status.PLANNED:
         _move(event, CrisisEvent.Status.INITIATED, actor=actor)

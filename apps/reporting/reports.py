@@ -15,11 +15,13 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 
+from django.conf import settings
 from django.db.models import Max, Prefetch
 from django.utils import timezone
 
 from apps.accounts.scoping import ScopeResolver
 from apps.calltree.models import CallTreeRun
+from apps.core.exceptions import DomainError
 from apps.exemptions.models import Exemption
 from apps.organization.models import Estate
 from apps.organization.querysets import CURRENT_STATUS
@@ -27,6 +29,11 @@ from apps.plans.models import CoordinatorAssignment, PlanVersion
 from apps.reporting.metrics import build_dashboard, current_version_ids, scoped_cost_codes
 from apps.reporting.models import ReportType
 from apps.testing.models import Test
+
+
+class ReportTooLarge(DomainError):
+    status_code = 413
+    default_code = "report_too_large"
 
 
 @dataclass
@@ -128,7 +135,7 @@ def estate_detail(user, params: dict) -> Table:
                 getattr(cc, CURRENT_STATUS),
                 coordinators,
                 version.approved_at.date() if version and version.approved_at else "",
-                version.approved_by.display_name if version and version.approved_by_id else "",
+                version.approved_by.display_name if version and version.approved_by is not None else "",
                 last_tests.get(cc.pk) or "",
                 exemptions.get(cc.current_plan_version_id, ""),
             ]
@@ -227,13 +234,13 @@ def call_tree_runs(user, params: dict) -> Table:
         table.rows.append(
             [
                 r.broadcast_id,
-                r.cost_code.cost_code if r.cost_code_id else "",
+                r.cost_code.cost_code if r.cost_code is not None else "",
                 r.call_tree_type,
                 "Simulation" if r.simulation_flag else "Live",
                 r.status,
                 r.started_at,
                 r.completed_at,
-                r.initiated_by.display_name if r.initiated_by_id else "",
+                r.initiated_by.display_name if r.initiated_by is not None else "",
                 len(members),
                 reached,
                 f"{100 * reached / len(members):.0f}%" if members else "",
@@ -358,8 +365,14 @@ BUILDERS = {
 }
 
 
-def build(report_type: str, user, params: dict) -> Table:
-    return BUILDERS[report_type](user, params or {})
+def build(report_type: ReportType | str, user, params: dict) -> Table:
+    table = BUILDERS[ReportType(report_type)](user, params or {})
+    if len(table.rows) > settings.MAX_REPORT_ROWS:
+        raise ReportTooLarge(
+            f"This report has {len(table.rows)} rows, over the {settings.MAX_REPORT_ROWS} limit. "
+            "Narrow it — an estate, a date range, or a status filter — and try again."
+        )
+    return table
 
 
 def as_of_date() -> dt.date:

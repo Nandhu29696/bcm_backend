@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from functools import partial
 
 from django.conf import settings
 from django.db import transaction
@@ -97,8 +98,7 @@ def notify_users(
         for user in users
     ]
     for row in rows:
-        row_id = row.pk
-        enqueue_after_commit(lambda row_id=row_id: send_web_push.delay(row_id))
+        enqueue_after_commit(partial(send_web_push.delay, row.pk))
     return rows
 
 

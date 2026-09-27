@@ -115,7 +115,7 @@ def start_call_tree(test: Test, *, actor, simulation: bool) -> Test:
     _assert_open(test)
     if test.test_type != Test.TestType.CALL_TREE:
         raise NotACallTreeTest()
-    if test.call_tree_run_id and test.call_tree_run.status in ("PENDING", "RUNNING"):
+    if test.call_tree_run is not None and test.call_tree_run.status in ("PENDING", "RUNNING"):
         raise DomainError("A call tree is already running for this test.", code="call_tree_running")
     cost_code = test.plan_version.plan.cost_code
     run = start_run(

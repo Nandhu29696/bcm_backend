@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
 from django_filters import rest_framework as filters
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_field
 from rest_framework import serializers
 from rest_framework import status as http_status
 from rest_framework.generics import ListAPIView
@@ -36,6 +36,14 @@ from apps.testing import services
 from apps.testing.models import Test, TestOutcome
 
 
+class OutcomeReportSerializer(serializers.Serializer):
+    """The final report's summary, for `get_report` below."""
+
+    entity_document_id = serializers.IntegerField()
+    file_name = serializers.CharField()
+    file_size_bytes = serializers.IntegerField()
+
+
 class OutcomeSerializer(serializers.ModelSerializer):
     report = serializers.SerializerMethodField()
 
@@ -51,6 +59,7 @@ class OutcomeSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
+    @extend_schema_field(OutcomeReportSerializer(allow_null=True))
     def get_report(self, outcome):
         if not outcome.final_report_document_id:
             return None
@@ -103,16 +112,16 @@ class TestSerializer(serializers.ModelSerializer):
             "can_manage",
         ]
 
-    def get_process_name(self, test):
+    def get_process_name(self, test) -> str:
         return getattr(test.plan_version.plan.cost_code.process, "process_name", "")
 
-    def get_estate_name(self, test):
+    def get_estate_name(self, test) -> str:
         return getattr(test.plan_version.plan.cost_code.estate, "estate_name", "")
 
-    def get_initiated_by_name(self, test):
+    def get_initiated_by_name(self, test) -> str:
         return test.initiated_by.display_name if test.initiated_by_id else ""
 
-    def get_can_manage(self, test):
+    def get_can_manage(self, test) -> bool:
         manageable = self.context.get("manageable")
         if manageable is not None:
             return test.plan_version.plan.cost_code_id in manageable

@@ -47,7 +47,7 @@ class ExemptionCommentSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
-    def get_author_name(self, comment):
+    def get_author_name(self, comment) -> str:
         return comment.author.display_name if comment.author_id else "System"
 
 
@@ -71,7 +71,7 @@ class ExemptionSerializer(serializers.ModelSerializer):
             "comments",
         ]
 
-    def get_requested_by_name(self, exemption):
+    def get_requested_by_name(self, exemption) -> str:
         return exemption.requested_by.display_name if exemption.requested_by_id else ""
 
 

@@ -196,8 +196,9 @@ class CostCodeFilterOptionsView(EstateScopedMixin, APIView):
     def _facet(self, field: str, condition: Q, id_attr: str, name_attr: str) -> list[dict]:
         """Distinct related rows referenced by the estate's active cost codes."""
         model = CostCode._meta.get_field(field).related_model
+        assert model is not None, f"{field} is not a relation on CostCode"
         rows = (
-            model.objects.filter(condition)
+            model.objects.filter(condition)  # type: ignore[attr-defined]
             # `values_list` before `distinct` keeps Meta.ordering columns out of the
             # SELECT list — otherwise they leak in and defeat DISTINCT entirely.
             .values_list(id_attr, name_attr)

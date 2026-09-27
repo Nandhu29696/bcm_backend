@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_field
 from rest_framework import serializers
 from rest_framework import status as http_status
 from rest_framework.permissions import IsAuthenticated
@@ -73,6 +73,14 @@ class ReportTypesView(APIView):
         )
 
 
+class ReportDocumentSerializer(serializers.Serializer):
+    """The generated file's summary, for `get_document` below."""
+
+    entity_document_id = serializers.IntegerField()
+    file_name = serializers.CharField()
+    file_size_bytes = serializers.IntegerField()
+
+
 class ReportRequestSerializer(serializers.ModelSerializer):
     report_type_label = serializers.CharField(source="get_report_type_display", read_only=True)
     document = serializers.SerializerMethodField()
@@ -96,6 +104,7 @@ class ReportRequestSerializer(serializers.ModelSerializer):
             "document",
         ]
 
+    @extend_schema_field(ReportDocumentSerializer(allow_null=True))
     def get_document(self, request):
         if not request.document_id:
             return None

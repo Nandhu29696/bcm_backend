@@ -63,7 +63,7 @@ class ProviderResult:
 
 
 class ChannelAdapter(Protocol):
-    channel: str
+    channel: Channel
     live: bool
 
     def send(self, member, attempt_number: int, context: dict) -> ProviderResult: ...
@@ -138,7 +138,7 @@ class DisabledProvider:
 
     live = False
 
-    def __init__(self, channel: str):
+    def __init__(self, channel: Channel):
         self.channel = channel
 
     def send(self, member, attempt_number, context):
@@ -325,16 +325,19 @@ def live_providers() -> dict[str, bool]:
 
 
 def adapter_for(channel: str, *, simulation: bool) -> ChannelAdapter:
+    key = Channel(channel)
     if simulation:
-        return {
+        fake_adapters: dict[Channel, ChannelAdapter] = {
             Channel.VOICE: FakeVoice(),
             Channel.MS_TEAMS: FakeTeams(),
             Channel.EMAIL: FakeEmail(),
-        }[channel]
+        }
+        return fake_adapters[key]
     if not live_providers().get(channel):
-        return DisabledProvider(channel)
-    return {
+        return DisabledProvider(key)
+    live_adapters: dict[Channel, ChannelAdapter] = {
         Channel.VOICE: TwilioVoice(),
         Channel.MS_TEAMS: GraphTeams(),
         Channel.EMAIL: EmailChannel(),
-    }[channel]
+    }
+    return live_adapters[key]

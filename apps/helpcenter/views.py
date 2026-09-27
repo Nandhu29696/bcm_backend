@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_field
 from rest_framework import serializers
 from rest_framework import status as http_status
 from rest_framework.exceptions import PermissionDenied
@@ -38,6 +38,15 @@ DOCUMENT_TYPE = "HELP_DOCUMENT"
 MANAGER_ROLES = (RoleCode.ADMIN, RoleCode.DOCUMENT_CONTROLLER)
 
 
+class HelpDocumentSerializer(serializers.Serializer):
+    """The attached file's summary, for `get_document` below."""
+
+    entity_document_id = serializers.IntegerField(allow_null=True)
+    file_name = serializers.CharField()
+    file_size_bytes = serializers.IntegerField()
+    mime_type = serializers.CharField()
+
+
 class HelpResourceSerializer(serializers.ModelSerializer):
     document = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
@@ -56,6 +65,7 @@ class HelpResourceSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    @extend_schema_field(HelpDocumentSerializer(allow_null=True))
     def get_document(self, resource):
         if not resource.document_id:
             return None
@@ -76,7 +86,7 @@ class HelpResourceSerializer(serializers.ModelSerializer):
             "mime_type": resource.document.mime_type,
         }
 
-    def get_created_by_name(self, resource):
+    def get_created_by_name(self, resource) -> str:
         return resource.created_by.display_name if resource.created_by_id else ""
 
 

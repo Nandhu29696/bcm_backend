@@ -6,8 +6,9 @@ import datetime as dt
 import io
 import re
 from dataclasses import dataclass
+from typing import Generic, TypedDict, TypeVar
 
-from django.db import transaction
+from django.db import models, transaction
 from openpyxl import load_workbook
 
 from apps.accounts.models import Employee
@@ -42,6 +43,23 @@ MODEL_BY_COLUMN = {
     "Subprocess_ID": (Subprocess, "subprocess_id"),
 }
 
+#: The name field each referenced model is matched on when a row gives a name
+#: instead of (or in addition to failing) a legacy ID. Keyed by model so the
+#: cache builder below only has to query each table once.
+LOOKUP_FIELD_BY_MODEL = {
+    BuLead: "lead_name",
+    BuClassification: "classification_name",
+    Center: "center_name",
+    CostCode: "cost_code",
+    EmployeeGrade: "grade_name",
+    EmployeeGroup: "group_name",
+    Lob: "lob_name",
+    Location: "location_name",
+    Process: "process_name",
+    Region: "region_name",
+    Subprocess: "subprocess_name",
+}
+
 RELATION_BY_COLUMN = {
     "BU_Lead_ID": "bu_lead",
     "BUClassification_ID": "bu_classification",
@@ -56,6 +74,16 @@ RELATION_BY_COLUMN = {
     "Region_ID": "region",
     "Subprocess_ID": "subprocess",
 }
+
+#: A synchronous, single-request import: this bounds how long one HTTP call
+#: can run for, independent of the file-size cap (a narrow sheet can still
+#: have an enormous number of rows).
+MAX_IMPORT_ROWS = 20_000
+
+
+class TooManyRowsError(ValueError):
+    pass
+
 
 FIELD_BY_COLUMN = {
     "EmpID": "employee_number",
@@ -80,6 +108,14 @@ class ImportResult:
     updated: int
     estates_created: int
     errors: list[dict[str, object]]
+
+
+class _PendingItem(TypedDict):
+    employee_number: str
+    fields: dict[str, object]
+    manager_number: str
+    supervisor_number: str
+    estate_created: bool
 
 
 def _clean(value: object) -> str:
@@ -114,46 +150,78 @@ def _normalize(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip().casefold()
 
 
-def _resolve_reference(column: str, value: object):
+_T = TypeVar("_T", bound=models.Model)
+
+
+@dataclass
+class _ReferenceCache(Generic[_T]):
+    """One model's rows, keyed both ways a row can name them.
+
+    Built once per import instead of per row: with ~11 referenced columns,
+    re-querying (or worse, re-scanning) the whole table on every row turns an
+    import into an O(rows x columns) full-table-scan loop.
+    """
+
+    by_legacy_id: dict[int, _T]
+    by_name: dict[str, _T]
+
+
+def _build_reference_caches() -> dict[type, _ReferenceCache[models.Model]]:
+    caches: dict[type, _ReferenceCache[models.Model]] = {}
+    for model, lookup_field in LOOKUP_FIELD_BY_MODEL.items():
+        by_legacy_id: dict[int, models.Model] = {}
+        by_name: dict[str, models.Model] = {}
+        for item in model.objects.all():
+            if item.legacy_id is not None:
+                by_legacy_id[item.legacy_id] = item
+            by_name[_normalize(str(getattr(item, lookup_field)))] = item
+        caches[model] = _ReferenceCache(by_legacy_id, by_name)
+    return caches
+
+
+def _build_estate_cache() -> _ReferenceCache[Estate]:
+    by_legacy_id: dict[int, Estate] = {}
+    by_name: dict[str, Estate] = {}
+    # Ordered so that, if duplicate legacy IDs exist, the first one wins — the
+    # same choice `.filter(legacy_id=...).first()` made before this was cached.
+    for item in Estate.all_objects.order_by("estate_id"):
+        if item.legacy_id is not None:
+            by_legacy_id.setdefault(item.legacy_id, item)
+        by_name[_normalize(item.estate_name)] = item
+    return _ReferenceCache(by_legacy_id, by_name)
+
+
+def _resolve_reference(
+    column: str, value: object, caches: dict[type, _ReferenceCache[models.Model]]
+) -> models.Model | None:
     text = _clean(value)
     if not text:
         return None
-    model, pk_name = MODEL_BY_COLUMN[column]
+    model, _pk_name = MODEL_BY_COLUMN[column]
+    cache = caches[model]
     try:
-        return model.objects.get(legacy_id=_number(text))
-    except (ValueError, TypeError, model.DoesNotExist):
-        lookup_field = {
-            BuLead: "lead_name",
-            BuClassification: "classification_name",
-            Center: "center_name",
-            CostCode: "cost_code",
-            EmployeeGrade: "grade_name",
-            EmployeeGroup: "group_name",
-            Lob: "lob_name",
-            Location: "location_name",
-            Process: "process_name",
-            Region: "region_name",
-            Subprocess: "subprocess_name",
-        }[model]
-        return next(
-            (item for item in model.objects.all() if _normalize(str(getattr(item, lookup_field))) == _normalize(text)),
-            None,
-        )
+        legacy_id = _number(text)
+    except (TypeError, ValueError):
+        legacy_id = None
+    if legacy_id is not None and legacy_id in cache.by_legacy_id:
+        return cache.by_legacy_id[legacy_id]
+    return cache.by_name.get(_normalize(text))
 
 
-def _resolve_estate(value: object, *, allow_create: bool = True) -> tuple[Estate | None, bool]:
+def _resolve_estate(
+    value: object, cache: _ReferenceCache[Estate], *, allow_create: bool = True
+) -> tuple[Estate | None, bool]:
     text = _clean(value)
     if not text:
         return None, False
-    estate = next(
-        (item for item in Estate.all_objects.all() if _normalize(item.estate_name) == _normalize(text)),
-        None,
-    )
+    estate = cache.by_name.get(_normalize(text))
     if estate is None:
         try:
-            estate = Estate.all_objects.filter(legacy_id=_number(text)).first()
+            legacy_id = _number(text)
         except (TypeError, ValueError):
             pass
+        else:
+            estate = cache.by_legacy_id.get(legacy_id)
     if estate:
         if not estate.active_flag:
             estate.restore()
@@ -166,7 +234,11 @@ def _resolve_estate(value: object, *, allow_create: bool = True) -> tuple[Estate
         return None, False
     if not allow_create:
         return None, False
-    return Estate.objects.create(estate_name=text), True
+    estate = Estate.objects.create(estate_name=text)
+    # So a later row naming this same brand-new estate reuses it instead of
+    # creating a duplicate.
+    cache.by_name[_normalize(text)] = estate
+    return estate, True
 
 
 def _header_map(headers: list[object]) -> dict[str, int]:
@@ -187,9 +259,17 @@ def import_employees(file_bytes: bytes) -> ImportResult:
     if missing:
         return ImportResult(0, 0, 0, [{"row": 1, "detail": f"Missing required column(s): {', '.join(missing)}."}])
 
+    row_count = (sheet.max_row or 1) - 1
+    if row_count > MAX_IMPORT_ROWS:
+        raise TooManyRowsError(
+            f"The workbook has {row_count} rows; split it into batches of {MAX_IMPORT_ROWS} or fewer."
+        )
+
     created = updated = estates_created = 0
     errors: list[dict[str, object]] = []
-    pending: list[tuple[int, dict[str, object]]] = []
+    pending: list[tuple[int, _PendingItem]] = []
+    reference_caches = _build_reference_caches()
+    estate_cache = _build_estate_cache()
     for row_number, values in enumerate(rows, start=2):
         raw = {column: values[index] if index < len(values) else None for column, index in headers.items()}
         if not any(value not in (None, "") for value in raw.values()):
@@ -198,19 +278,25 @@ def import_employees(file_bytes: bytes) -> ImportResult:
             employee_number = _clean(raw.get("EmpID"))
             if not employee_number:
                 raise ValueError("EmpID is required")
-            fields = {field: _clean(raw[column]) for column, field in FIELD_BY_COLUMN.items() if column in raw}
+            fields: dict[str, object] = {
+                field: _clean(raw[column]) for column, field in FIELD_BY_COLUMN.items() if column in raw
+            }
             fields["legacy_row_id"] = _number(raw["ID"]) if _clean(raw.get("ID")) else None
             fields["date_of_joining"] = _date(raw.get("Date_of_Joining"))
             fields["last_working_date"] = _date(raw.get("LWD"))
             for column in MODEL_BY_COLUMN:
                 if column in raw:
                     relation_field = RELATION_BY_COLUMN[column]
-                    fields[relation_field] = _resolve_reference(column, raw[column])
+                    fields[relation_field] = _resolve_reference(column, raw[column], reference_caches)
                     if _clean(raw[column]) and fields[relation_field] is None:
                         raise ValueError(f"Unknown reference in {column}: {_clean(raw[column])}")
             estate_name = raw.get("Estate") or raw.get("Estate_Name")
             estate_id = raw.get("EstateID")
-            estate, estate_created = _resolve_estate(estate_name, allow_create=True) if _clean(estate_name) else _resolve_estate(estate_id, allow_create=False)
+            estate, estate_created = (
+                _resolve_estate(estate_name, estate_cache, allow_create=True)
+                if _clean(estate_name)
+                else _resolve_estate(estate_id, estate_cache, allow_create=False)
+            )
             if _clean(estate_name) or _clean(estate_id):
                 if estate is None:
                     raise ValueError(f"Unknown estate: {_clean(estate_name or estate_id)}")

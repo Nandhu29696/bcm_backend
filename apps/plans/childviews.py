@@ -18,6 +18,7 @@ contact list would only complicate the editor.
 
 from __future__ import annotations
 
+from django.db import models
 from rest_framework import status as http_status
 from rest_framework import viewsets
 from rest_framework.exceptions import APIException
@@ -47,7 +48,7 @@ class VersionNotEditable(APIException):
 class PlanVersionChildViewSet(PlanVersionScopedMixin, viewsets.ModelViewSet):
     """Subclass with `model`, `serializer_class` and optionally `select_related`."""
 
-    model = None
+    model: type[models.Model] | None = None
     select_related: tuple[str, ...] = ()
     permission_classes = [IsAuthenticated, IsActiveUser]
     pagination_class = None
@@ -57,6 +58,7 @@ class PlanVersionChildViewSet(PlanVersionScopedMixin, viewsets.ModelViewSet):
     estate_scope_path = None
 
     def get_queryset(self):
+        assert self.model is not None, "Subclass must set model"
         version = self.get_plan_version()
         queryset = self.model.objects.filter(plan_version=version)
         if self.select_related:
