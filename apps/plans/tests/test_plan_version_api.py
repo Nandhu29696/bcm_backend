@@ -72,8 +72,8 @@ def test_coordinators_outside_scope_is_404(api_client, user_factory, approved_ve
 # --------------------------------------------------------------------------- #
 
 
-def test_copy_returns_the_new_version(coordinator_client, approved_version):
-    response = coordinator_client.post(copy_url(approved_version), {"comments": "Annual refresh"})
+def test_copy_returns_the_new_version(admin_client, approved_version):
+    response = admin_client.post(copy_url(approved_version), {"comments": "Annual refresh"})
 
     assert response.status_code == 201
     assert response.data["version_number"] == 2
@@ -82,24 +82,24 @@ def test_copy_returns_the_new_version(coordinator_client, approved_version):
     assert response.data["copied_flag"] is True
 
 
-def test_the_copy_comment_lands_on_the_history(coordinator_client, approved_version):
-    response = coordinator_client.post(copy_url(approved_version), {"comments": "Annual refresh"})
+def test_the_copy_comment_lands_on_the_history(admin_client, approved_version):
+    response = admin_client.post(copy_url(approved_version), {"comments": "Annual refresh"})
     entry = PlanStatusHistory.objects.get(plan_version_id=response.data["plan_version_id"])
     assert entry.comments == "Annual refresh"
 
 
-def test_copying_an_in_flight_version_is_a_400_not_a_500(coordinator_client, approved_version):
+def test_copying_an_in_flight_version_is_a_400_not_a_500(admin_client, approved_version):
     approved_version.status = PlanStatus.WORK_IN_PROGRESS
     approved_version.save(update_fields=["status"])
 
-    response = coordinator_client.post(copy_url(approved_version))
+    response = admin_client.post(copy_url(approved_version))
     assert response.status_code == 400
     assert response.data["code"] == "source_not_copyable"
 
 
-def test_a_second_copy_is_refused_with_a_readable_reason(coordinator_client, approved_version):
-    coordinator_client.post(copy_url(approved_version))
-    response = coordinator_client.post(copy_url(approved_version))
+def test_a_second_copy_is_refused_with_a_readable_reason(admin_client, approved_version):
+    admin_client.post(copy_url(approved_version))
+    response = admin_client.post(copy_url(approved_version))
 
     assert response.status_code == 400
     assert response.data["code"] == "open_version_exists"
@@ -114,6 +114,12 @@ def test_a_viewer_cannot_copy(api_client, user_factory, approved_version, org):
     api_client.force_authenticate(user=viewer)
 
     assert api_client.post(copy_url(approved_version)).status_code == 403
+
+
+def test_a_coordinator_cannot_copy(coordinator_client, approved_version):
+    """A coordinator's assignment authorises answering, not starting a new
+    version of the plan -- administrators only now."""
+    assert coordinator_client.post(copy_url(approved_version)).status_code == 403
 
 
 # --------------------------------------------------------------------------- #
@@ -367,6 +373,18 @@ def test_a_viewer_cannot_assign(api_client, user_factory, approved_version, org,
     viewer = user_factory(email="viewer@example.com", roles=["BCM_VIEWER"])
     UserEstateScope.objects.create(user=viewer, estate=org["estate"])
     api_client.force_authenticate(user=viewer)
+
+    response = api_client.post(coordinators_url(approved_version), {"employee": other_employee.pk})
+    assert response.status_code == 403
+
+
+def test_a_bu_lead_cannot_assign(api_client, user_factory, approved_version, org, other_employee):
+    """BU Lead is approve/rework only -- not plan authorship of any kind."""
+    from apps.accounts.models import UserEstateScope
+
+    lead = user_factory(email="bulead@example.com", roles=["BCM_BU_LEAD"])
+    UserEstateScope.objects.create(user=lead, estate=org["estate"])
+    api_client.force_authenticate(user=lead)
 
     response = api_client.post(coordinators_url(approved_version), {"employee": other_employee.pk})
     assert response.status_code == 403

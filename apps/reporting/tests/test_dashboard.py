@@ -344,6 +344,22 @@ class TestReconciliation:
         )
         assert filtered["totals"]["cost_codes"] == 0
 
+    def test_bu_lead_dashboard_is_narrowed_to_led_cost_codes(self, population, org, actor, user_factory):
+        """Only `org["cost_code"]` has a bu_lead (Priya Lead) among Alpha's 3."""
+        lead = user_factory(email="priya@example.com", roles=["BCM_BU_LEAD"])
+        UserEstateScope.objects.create(user=lead, estate=org["estate"])
+        data = build_dashboard(ScopeResolver(lead), today=TODAY)
+        assert data["narrowed_to_own"] is True
+        assert data["totals"]["cost_codes"] == 1
+        assert [r["name"] for r in data["status_by_estate"]] == ["Alpha Estate"]
+
+        # A coordinator's dashboard is deliberately left un-narrowed (see
+        # `_narrowed_to_led_cost_codes`) -- same estate, full estate figures.
+        UserEstateScope.objects.create(user=actor, estate=org["estate"])
+        coordinator_data = build_dashboard(ScopeResolver(actor), today=TODAY)
+        assert coordinator_data["narrowed_to_own"] is False
+        assert coordinator_data["totals"]["cost_codes"] == 3
+
     def test_dashboard_endpoint(self, population, coordinator_client, org):
         response = coordinator_client.get(
             reverse("reporting:dashboard"), {"estate": org["estate"].pk}

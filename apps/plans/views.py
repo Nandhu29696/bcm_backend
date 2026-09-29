@@ -21,17 +21,18 @@ version number.
 
 from __future__ import annotations
 
-from django.db.models import Prefetch
+from django.db import models
+from django.db.models import Prefetch, Subquery
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status as http_status
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView
+from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsActiveUser, role_required
-from apps.accounts.roles import AUTHORING_ROLES, RoleCode
+from apps.accounts.roles import RoleCode
 from apps.accounts.scoping import ScopedQuerySetMixin
 from apps.organization.models import CostCode
 from apps.plans.access import PlanVersionScopedMixin, version_list_context
@@ -47,6 +48,7 @@ from apps.plans.serializers import (
     CopyPlanVersionSerializer,
     CostCodeDetailSerializer,
     CostCodeUpdateSerializer,
+    MyPlanSerializer,
     PlanStatusHistorySerializer,
     PlanVersionSerializer,
 )
@@ -73,8 +75,13 @@ AUDITED_COST_CODE_FIELDS = (
     "location_id",
 )
 
-CanEditCostCode = role_required(*AUTHORING_ROLES)
-CanAssignCoordinator = role_required(RoleCode.ADMIN, RoleCode.COORDINATOR, RoleCode.BU_LEAD)
+# Cost-code metadata, the first plan version and copy-on-write are all "editing
+# the plan", not answering it -- a coordinator's assignment does not reach this
+# far. See apps.plans.access.caller_may_edit_content for the equivalent cut on
+# a plan version's own content.
+CanEditCostCode = role_required(RoleCode.ADMIN)
+# Coordinator assignment is an administrative operation.
+CanAssignCoordinator = role_required(RoleCode.ADMIN)
 
 
 class CostCodeDetailView(ScopedQuerySetMixin, RetrieveUpdateAPIView):
@@ -133,6 +140,56 @@ class CostCodeDetailView(ScopedQuerySetMixin, RetrieveUpdateAPIView):
         super().update(request, *args, **kwargs)
         instance = self.get_object()
         return Response(CostCodeDetailSerializer(instance).data)
+
+
+class MyPlansView(ScopedQuerySetMixin, ListAPIView):
+    """Paginated current plans claimed by a BU lead or coordinator."""
+
+    serializer_class = MyPlanSerializer
+    permission_classes = [
+        IsAuthenticated,
+        IsActiveUser,
+        role_required(RoleCode.BU_LEAD, RoleCode.COORDINATOR),
+    ]
+    estate_scope_path = "plan__cost_code__estate_id"
+    cost_code_scope_path = "plan__cost_code_id"
+
+    def get_queryset(self):
+        current_version = PlanVersion.objects.filter(
+            plan_id=models.OuterRef("plan_id")
+        ).order_by("-version_number")
+        queryset = PlanVersion.objects.filter(
+            version_number=Subquery(current_version.values("version_number")[:1])
+        ).select_related(
+            "plan",
+            "plan__cost_code",
+            "plan__cost_code__estate",
+            "plan__cost_code__process",
+            "plan__cost_code__subprocess",
+            "plan__cost_code__region",
+            "plan__cost_code__bu_lead",
+        )
+        queryset = self.scope_queryset(queryset)
+        cost_code = self.request.query_params.get("cost_code", "").strip()
+        if cost_code:
+            queryset = queryset.filter(plan__cost_code__cost_code__icontains=cost_code)
+        for parameter, lookup in (
+            ("estate", "plan__cost_code__estate_id"),
+            ("process", "plan__cost_code__process_id"),
+            ("subprocess", "plan__cost_code__subprocess_id"),
+            ("region", "plan__cost_code__region_id"),
+            ("bu_lead", "plan__cost_code__bu_lead_id"),
+        ):
+            values = [value.strip() for value in self.request.query_params.getlist(parameter) if value.strip()]
+            if values:
+                queryset = queryset.filter(**{f"{lookup}__in": values})
+        statuses = [value.strip() for value in self.request.query_params.getlist("bcp_status") if value.strip()]
+        if statuses:
+            queryset = queryset.filter(status__in=statuses)
+        return queryset.order_by(
+            "plan__cost_code__estate__estate_name",
+            "plan__cost_code__cost_code",
+        )
 
 
 class CostCodePlanVersionsView(ScopedQuerySetMixin, APIView):

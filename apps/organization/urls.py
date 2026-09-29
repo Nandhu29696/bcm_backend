@@ -15,6 +15,11 @@ router.register("estates", views.EstateViewSet, basename="estate")
 # filterset and ordering fields instead of inheriting the estate viewset's.
 estate_patterns = [
     path(
+        "estates/<int:estate_id>/processes/",
+        views.EstateProcessListView.as_view(),
+        name="estate-processes",
+    ),
+    path(
         "estates/<int:estate_id>/cost-codes/",
         views.CostCodeListView.as_view(),
         name="estate-cost-codes",

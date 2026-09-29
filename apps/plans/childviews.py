@@ -34,6 +34,14 @@ class NotAnAuthor(APIException):
     default_code = "not_an_author"
 
 
+class NotAContentEditor(NotAnAuthor):
+    """A coordinator's assignment authorises answering the questionnaire,
+    exemptions and submission -- not this. See `access.caller_may_edit_content`."""
+
+    default_detail = "Only an administrator can change this."
+    default_code = "not_a_content_editor"
+
+
 class VersionNotEditable(APIException):
     status_code = http_status.HTTP_409_CONFLICT
     default_code = "plan_not_editable"
@@ -87,8 +95,8 @@ class PlanVersionChildViewSet(PlanVersionScopedMixin, viewsets.ModelViewSet):
 
     def assert_writable(self):
         version = self.get_plan_version()
-        if not self.caller_may_author(version):
-            raise NotAnAuthor()
+        if not self.caller_may_edit_content(version):
+            raise NotAContentEditor()
         if not version.is_editable:
             raise VersionNotEditable(version)
         return version

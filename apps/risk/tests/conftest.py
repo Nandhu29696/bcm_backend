@@ -62,14 +62,36 @@ def version(estate, employee, author):
 
 
 @pytest.fixture
-def author_client(api_client, author):
-    api_client.force_authenticate(user=author)
+def admin(user_factory):
+    return user_factory(email="admin@example.com", roles=["BCM_ADMIN"])
+
+
+@pytest.fixture
+def author_client(api_client, admin):
+    """The user who may edit this version's structured content.
+
+    Administrators only (`access.caller_may_edit_content`) -- a coordinator's
+    assignment authorises answering the questionnaire, exemptions and
+    submission, not editing the risk register. `assigned_coordinator_client`
+    below is the actively-assigned coordinator, used to prove they are
+    refused here.
+    """
+    api_client.force_authenticate(user=admin)
     return api_client
 
 
 # Separate client instances per persona. Sharing the `api_client` fixture would
 # let whichever fixture authenticated last win — a "viewer" test whose setup
 # also used `author_client` would silently run as the author.
+
+
+@pytest.fixture
+def assigned_coordinator_client(author):
+    from rest_framework.test import APIClient
+
+    client = APIClient()
+    client.force_authenticate(user=author)
+    return client
 
 
 @pytest.fixture

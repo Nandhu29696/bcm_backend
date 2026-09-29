@@ -163,9 +163,11 @@ def test_sections_are_readable_in_scope_and_404_outside(
 
 
 @pytest.mark.parametrize("name", ["service-description", "critical-contact", "network-requirement"])
-def test_only_authors_write(viewer_client, onlooker_client, version, name):
+def test_only_authors_write(viewer_client, onlooker_client, assigned_coordinator_client, version, name):
     assert viewer_client.post(url(name, version), {}).status_code == 403
     assert onlooker_client.post(url(name, version), {}).status_code == 403
+    # Even actively assigned: a coordinator answers, they do not edit BIA sub-forms.
+    assert assigned_coordinator_client.post(url(name, version), {}).status_code == 403
 
 
 @pytest.mark.parametrize("name", ["service-description", "critical-contact", "network-requirement"])

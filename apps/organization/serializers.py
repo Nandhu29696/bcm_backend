@@ -40,6 +40,13 @@ class EstateSerializer(serializers.ModelSerializer):
         return rollup.get(estate.estate_id, self.context["empty_rollup"])
 
 
+class ProcessSummarySerializer(serializers.Serializer):
+    process_id = serializers.IntegerField()
+    process_name = serializers.CharField()
+    cost_code_count = serializers.IntegerField()
+    status_rollup = serializers.DictField(child=serializers.IntegerField())
+
+
 class CostCodeListSerializer(serializers.ModelSerializer):
     """A row of the cost code table.
 

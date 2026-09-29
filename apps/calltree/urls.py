@@ -7,6 +7,7 @@ from apps.calltree import views
 app_name = "calltree"
 
 urlpatterns = [
+    path("call-tree-providers/", views.ProviderStatusView.as_view(), name="provider-status"),
     path(
         "call-tree-runs/<int:call_tree_run_id>/", views.RunDetailView.as_view(), name="run-detail"
     ),

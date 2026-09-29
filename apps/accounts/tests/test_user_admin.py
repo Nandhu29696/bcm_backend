@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import Employee, UserAccount, UserEstateScope, UserRole
 from apps.core.models import AuditLog
-from apps.organization.models import Estate
+from apps.organization.models import CostCode, Estate, Process
 
 pytestmark = pytest.mark.django_db
 
@@ -110,6 +110,40 @@ class TestMfaSwitch:
 
 
 class TestUserAdministration:
+    def test_admin_can_view_linked_employee_details(self, admin_client, alice):
+        employee = Employee.objects.create(
+            employee_number="E-DETAIL",
+            full_name="Alice Employee",
+            email="alice.work@example.com",
+            designation="Continuity Analyst",
+            contact_number="555-0100",
+            employment_status="Active",
+        )
+        alice.employee = employee
+        alice.save(update_fields=["employee"])
+
+        response = admin_client.get(
+            reverse("accounts:admin-user-employee", args=[alice.pk])
+        )
+
+        assert response.status_code == 200
+        assert response.data["employee_number"] == "E-DETAIL"
+        assert response.data["designation"] == "Continuity Analyst"
+        assert response.data["contact_number"] == "555-0100"
+
+    def test_employee_details_require_admin_and_a_linked_record(self, alice, user_factory):
+        client = APIClient()
+        client.force_authenticate(user=alice)
+        assert client.get(
+            reverse("accounts:admin-user-employee", args=[alice.pk])
+        ).status_code == 403
+
+        admin = user_factory(email="admin@example.com", roles=["BCM_ADMIN"])
+        client.force_authenticate(user=admin)
+        assert client.get(
+            reverse("accounts:admin-user-employee", args=[alice.pk])
+        ).status_code == 404
+
     def test_list_search_and_filter(self, admin_client, alice, user_factory):
         user_factory(email="bob@example.com", display_name="Bob", user_status="Pending")
         url = reverse("accounts:admin-user-list")
@@ -127,6 +161,49 @@ class TestUserAdministration:
         found = admin_client.get(url, {"search": "alic"}).data
         found_rows = found["results"] if isinstance(found, dict) else found
         assert [r["email"] for r in found_rows] == ["alice@example.com"]
+
+    def test_filter_by_cost_code_estate_and_process(self, admin_client, alice, user_factory):
+        estate = Estate.objects.create(estate_name="Alpha")
+        other_estate = Estate.objects.create(estate_name="Beta")
+        process = Process.objects.create(process_name="Marketing Operations")
+        other_process = Process.objects.create(process_name="IT Infrastructure")
+        cost_code = CostCode.objects.create(cost_code="65-DEMO01", estate=estate, process=process)
+        other_cost_code = CostCode.objects.create(
+            cost_code="65-DEMO02", estate=other_estate, process=other_process
+        )
+
+        alice.employee = Employee.objects.create(
+            employee_number="E-201",
+            full_name="Alice Employee",
+            email="alice@example.com",
+            estate=estate,
+            process=process,
+            cost_code=cost_code,
+        )
+        alice.save(update_fields=["employee"])
+
+        bob = user_factory(email="bob@example.com", display_name="Bob")
+        bob.employee = Employee.objects.create(
+            employee_number="E-202",
+            full_name="Bob Employee",
+            email="bob@example.com",
+            estate=other_estate,
+            process=other_process,
+            cost_code=other_cost_code,
+        )
+        bob.save(update_fields=["employee"])
+
+        url = reverse("accounts:admin-user-list")
+
+        def emails(params):
+            body = admin_client.get(url, params).data
+            rows = body["results"] if isinstance(body, dict) else body
+            return {r["email"] for r in rows}
+
+        assert emails({"estate": estate.pk}) == {"alice@example.com"}
+        assert emails({"process": process.pk}) == {"alice@example.com"}
+        assert emails({"cost_code": "DEMO01"}) == {"alice@example.com"}
+        assert emails({"estate": other_estate.pk}) == {"bob@example.com"}
 
     def test_one_patch_activates_links_and_grants(self, admin_client, alice):
         estate = Estate.objects.create(estate_name="Alpha")

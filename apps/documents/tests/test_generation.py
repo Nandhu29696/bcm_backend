@@ -149,17 +149,26 @@ def test_identical_content_is_stored_once(approved, actor, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-def test_list_and_regenerate_through_the_api(coordinator_client, approved):
+def test_list_and_regenerate_through_the_api(admin_client, coordinator_client, approved):
+    # Regenerating is administrators only; reading the list is not.
     assert coordinator_client.get(docs_url(approved)).data == []
-    created = coordinator_client.post(generate_url(approved))
+    created = admin_client.post(generate_url(approved))
     assert created.status_code == 201, created.data
     assert {d["format"] for d in created.data} == {"docx", "pdf"}
     assert created.data[0]["template"] == f"BCP_PLAN v{generation.RENDERER_VERSION}"
     assert len(coordinator_client.get(docs_url(approved)).data) == 2
 
 
-def test_a_viewer_can_list_but_not_regenerate(approved, user_factory, org, coordinator_client):
-    coordinator_client.post(generate_url(approved))
+def test_a_coordinator_can_list_but_not_regenerate(approved, coordinator_client):
+    """A coordinator's assignment authorises answering, not editing this."""
+    assert coordinator_client.get(docs_url(approved)).status_code == 200
+    response = coordinator_client.post(generate_url(approved))
+    assert response.status_code == 403
+    assert response.data["code"] == "not_a_content_editor"
+
+
+def test_a_viewer_can_list_but_not_regenerate(approved, user_factory, org, admin_client):
+    admin_client.post(generate_url(approved))
     viewer = user_factory(email="viewer@example.com", roles=["BCM_VIEWER"])
     UserEstateScope.objects.create(user=viewer, estate=org["estate"])
     client = APIClient()
@@ -169,9 +178,9 @@ def test_a_viewer_can_list_but_not_regenerate(approved, user_factory, org, coord
 
 
 def test_download_needs_a_link_and_the_link_checks_scope(
-    coordinator_client, approved, user_factory
+    admin_client, coordinator_client, approved, user_factory
 ):
-    created = coordinator_client.post(generate_url(approved)).data
+    created = admin_client.post(generate_url(approved)).data
     attachment_id = created[0]["entity_document_id"]
 
     # In scope: a signed link is issued.
@@ -216,8 +225,8 @@ def test_download_needs_a_link_and_the_link_checks_scope(
     )
 
 
-def test_an_expired_link_is_refused(coordinator_client, approved, settings, monkeypatch):
-    created = coordinator_client.post(generate_url(approved)).data
+def test_an_expired_link_is_refused(admin_client, approved, settings, monkeypatch):
+    created = admin_client.post(generate_url(approved)).data
     attachment_id = created[0]["entity_document_id"]
     settings.AWS_S3_SIGNED_URL_EXPIRY_SECONDS = 60
 

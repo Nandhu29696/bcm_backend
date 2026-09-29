@@ -41,7 +41,9 @@ from apps.organization.serializers import (
     CostCodeListSerializer,
     EstateSerializer,
     FilterOptionsSerializer,
+    ProcessSummarySerializer,
 )
+from apps.organization.querysets import process_rollup
 
 
 class EstateViewSet(ScopedQuerySetMixin, viewsets.ReadOnlyModelViewSet):
@@ -125,6 +127,18 @@ class EstateScopedMixin(ScopedQuerySetMixin):
         if not scope.estate_ids:
             return queryset.none()
         return queryset.filter(pk__in=scope.estate_ids)
+
+
+class EstateProcessListView(EstateScopedMixin, APIView):
+    """Process directory for one estate, scoped to the caller's cost codes."""
+
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    @extend_schema(responses=ProcessSummarySerializer(many=True), summary="Processes in an estate")
+    def get(self, request, *args, **kwargs):
+        estate = self.get_estate()
+        queryset = self.scope_queryset(CostCode.objects.filter(estate=estate))
+        return Response(ProcessSummarySerializer(process_rollup(queryset), many=True).data)
 
 
 @extend_schema(

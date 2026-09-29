@@ -40,6 +40,65 @@ class TestBuilders:
             and row["BU lead email"] == "priya@example.com"
         )
 
+    def test_user_report_is_admin_only(self, actor, user_factory):
+        from rest_framework.exceptions import PermissionDenied
+
+        admin = user_factory(email="r-admin2@example.com", roles=["BCM_ADMIN"])
+        table = reports.build(ReportType.USER_ACTIVITY, admin, {})
+        emails = [dict(zip(table.columns, row, strict=True))["Email"] for row in table.rows]
+        assert "arun.coordinator@example.com" in emails
+        assert "r-admin2@example.com" in emails
+
+        with pytest.raises(PermissionDenied):
+            reports.build(ReportType.USER_ACTIVITY, actor, {})
+
+    def test_user_report_filters_by_cost_code(self, org, actor, employee, user_factory):
+        from apps.accounts.models import Employee
+
+        # `actor`'s employee has no home cost code by default (their claim on
+        # `org["cost_code"]` is a CoordinatorAssignment, a different thing) --
+        # set one so this test has something to filter on.
+        employee.cost_code = org["cost_code"]
+        employee.save(update_fields=["cost_code"])
+
+        admin = user_factory(email="r-admin3@example.com", roles=["BCM_ADMIN"])
+        other_employee = Employee.objects.create(
+            employee_number="E-901",
+            full_name="Other Employee",
+            email="other-scoped@example.com",
+            cost_code=org["other_cost_code"],
+        )
+        other = user_factory(email="other-scoped@example.com", roles=["BCM_VIEWER"])
+        other.employee = other_employee
+        other.save(update_fields=["employee"])
+
+        table = reports.build(ReportType.USER_ACTIVITY, admin, {"cost_code": org["cost_code"].cost_code})
+        emails = [dict(zip(table.columns, row, strict=True))["Email"] for row in table.rows]
+        assert "arun.coordinator@example.com" in emails
+        assert "other-scoped@example.com" not in emails
+
+    def test_report_types_hide_user_report_from_non_admins(self, org, actor):
+        from apps.accounts.models import UserEstateScope
+
+        UserEstateScope.objects.create(user=actor, estate=org["estate"])
+        client = APIClient()
+        client.force_authenticate(user=actor)
+        codes = {t["code"] for t in client.get(reverse("reporting:report-types")).data["types"]}
+        assert "USER_ACTIVITY" not in codes
+
+    def test_creating_a_user_report_request_is_admin_only(self, org, actor):
+        from apps.accounts.models import UserEstateScope
+
+        UserEstateScope.objects.create(user=actor, estate=org["estate"])
+        client = APIClient()
+        client.force_authenticate(user=actor)
+        response = client.post(
+            reverse("reporting:report-requests"),
+            {"report_type": "USER_ACTIVITY", "report_format": "xlsx", "schedule": "ONCE"},
+            format="json",
+        )
+        assert response.status_code == 403
+
     def test_all_builders_run_for_admin(self, org, actor, approved_version, user_factory):
         admin = user_factory(email="r-admin@example.com", roles=["BCM_ADMIN"])
         CmscMember.objects.create(
@@ -236,9 +295,15 @@ class TestRequests:
         assert request.status == "FAILED" and "no longer active" in request.last_error
 
     def test_types_endpoint_lists_formats(self, coordinator_client):
+        # USER_ACTIVITY is account/role data, not plan data -- administrators
+        # only (see reports.user_report and ReportTypesView).
         data = coordinator_client.get(reverse("reporting:report-types")).data
-        assert {t["code"] for t in data["types"]} == set(ReportType.values)
+        assert {t["code"] for t in data["types"]} == set(ReportType.values) - {"USER_ACTIVITY"}
         assert [s["code"] for s in data["schedules"]] == ["ONCE", "DAILY", "WEEKLY", "MONTHLY"]
+
+    def test_types_endpoint_includes_user_report_for_admins(self, admin_client):
+        data = admin_client.get(reverse("reporting:report-types")).data
+        assert {t["code"] for t in data["types"]} == set(ReportType.values)
 
     def test_monthly_next_run_clamps_to_month_length(self):
         jan31 = dt.datetime(2026, 1, 31, 9, 0, tzinfo=dt.UTC)

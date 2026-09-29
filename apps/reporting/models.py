@@ -21,6 +21,7 @@ class ReportType(models.TextChoices):
     CALL_TREE_RUNS = "CALL_TREE_RUNS", "Call tree run report"
     EXEMPTION_REGISTER = "EXEMPTION_REGISTER", "Exemption register"
     DASHBOARD_SUMMARY = "DASHBOARD_SUMMARY", "Dashboard summary"
+    USER_ACTIVITY = "USER_ACTIVITY", "User report"
 
 
 class ReportFormat(models.TextChoices):

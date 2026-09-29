@@ -34,11 +34,26 @@ from apps.accounts.permissions import IsActiveUser
 from apps.accounts.scoping import ScopedQuerySetMixin
 from apps.calltree import engine
 from apps.calltree.models import CallAttempt, CallTreeRun, Channel
-from apps.calltree.providers import ProviderResult, twilio_signature
+from apps.calltree.providers import ProviderResult, live_providers, twilio_signature
 from apps.calltree.serializers import RunDetailSerializer, RunSummarySerializer
 from apps.crisis.access import CostCodeScopedMixin
 
 logger = logging.getLogger(__name__)
+
+
+class ProviderStatusView(APIView):
+    """Which call tree channels are actually live in this environment.
+
+    The "Live" choice in the Simulation/Live dialog is otherwise a silent
+    no-op when a channel is not configured (see `providers.DisabledProvider`)
+    -- this lets the frontend say so up front instead of after the fact.
+    """
+
+    permission_classes = [IsAuthenticated, IsActiveUser]
+
+    @extend_schema(summary="Which call tree channels are live in this environment")
+    def get(self, request, *args, **kwargs):
+        return Response(live_providers())
 
 
 def _runs_queryset():

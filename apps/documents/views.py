@@ -32,7 +32,7 @@ from apps.accounts.scoping import ScopedQuerySetMixin
 from apps.documents.generation import documents_for_version, generate_for_version, media_root
 from apps.documents.models import EntityDocument
 from apps.plans.access import PlanVersionScopedMixin
-from apps.plans.childviews import NotAnAuthor
+from apps.plans.childviews import NotAContentEditor
 from apps.plans.models import PlanVersion
 
 SIGNER_SALT = "bcm.document.download"
@@ -86,8 +86,10 @@ class RegenerateView(PlanVersionScopedMixin, APIView):
     @extend_schema(request=None, responses=GeneratedDocumentSerializer(many=True))
     def post(self, request, *args, **kwargs):
         version = self.get_plan_version()
-        if not (self.caller_may_author(version) or self.caller_may_approve(version)):
-            raise NotAnAuthor()
+        if not (self.caller_may_edit_content(version) or self.caller_may_approve(version)):
+            raise NotAContentEditor(
+                "Only an administrator or the approving BU lead can regenerate this document."
+            )
         attachments = generate_for_version(version, actor=request.user)
         return Response(
             GeneratedDocumentSerializer(attachments, many=True).data,

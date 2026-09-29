@@ -60,6 +60,10 @@ class CrisisEvent(models.Model):
     event_time = models.TimeField(null=True, blank=True)
     initiated_flag = models.BooleanField(default=False)
     status = models.CharField(max_length=50, choices=Status.choices, default=Status.PLANNED)
+    #: Set once, the first time the event reaches Closed or Cancelled — the
+    #: end of the "Start Date / End Date" tracker (Closed and Cancelled are
+    #: this event's only terminal states; see `services.EVENT_TRANSITIONS`).
+    closed_at = models.DateTimeField(null=True, blank=True)
     call_tree_run = models.ForeignKey(
         "calltree.CallTreeRun",
         on_delete=models.SET_NULL,

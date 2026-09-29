@@ -43,6 +43,7 @@ FORMATS = {
     ReportType.CALL_TREE_RUNS: {ReportFormat.XLSX, ReportFormat.CSV, ReportFormat.PDF},
     ReportType.EXEMPTION_REGISTER: {ReportFormat.XLSX, ReportFormat.CSV, ReportFormat.PDF},
     ReportType.DASHBOARD_SUMMARY: {ReportFormat.XLSX, ReportFormat.CSV, ReportFormat.PDF},
+    ReportType.USER_ACTIVITY: {ReportFormat.XLSX, ReportFormat.CSV, ReportFormat.PDF},
 }
 
 

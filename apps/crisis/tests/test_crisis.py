@@ -195,10 +195,28 @@ class TestEvents:
         )
         assert closed.status_code == 200 and closed.data["status"] == "Closed"
         assert "Closed: All accounted for" in closed.data["comments"]
+        assert closed.data["closed_at"] is not None
         again = coordinator_client.post(
             reverse("crisis:event-close", args=[created.data["crisis_event_id"]]), {}, format="json"
         )
         assert again.status_code == 409
+
+    def test_closed_at_is_set_once_on_reaching_a_terminal_status(
+        self, org, approved_version, coordinator_client
+    ):
+        """The Start Date/End Date tracker: closed_at marks the end, set exactly once."""
+        url = reverse("crisis:cost-code-events", args=[org["cost_code"].pk])
+        created = coordinator_client.post(
+            url, {"event_type": "Table Top", "event_date": "2026-10-01"}, format="json"
+        )
+        assert created.data["closed_at"] is None
+
+        cancelled = coordinator_client.post(
+            reverse("crisis:event-cancel", args=[created.data["crisis_event_id"]]), {}, format="json"
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.data["status"] == "Cancelled"
+        assert cancelled.data["closed_at"] is not None
 
     def test_initiate_without_a_roster_is_a_clear_error(
         self, org, approved_version, coordinator_client

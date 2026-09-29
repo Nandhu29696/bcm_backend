@@ -12,6 +12,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.middleware.csrf import get_token
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django_filters import rest_framework as filters
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -36,6 +37,7 @@ from apps.accounts.employee_import import TEMPLATE_HEADERS, TooManyRowsError, im
 from apps.accounts.permissions import CanBrowseEmployeeDirectory, IsActiveUser, IsAdmin
 from apps.accounts.serializers import (
     CurrentUserSerializer,
+    EmployeeAdminDetailSerializer,
     EmployeeSummarySerializer,
     LoginSerializer,
     OtpResendSerializer,
@@ -537,6 +539,16 @@ class RoleViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
+class UserAdminFilter(filters.FilterSet):
+    estate = filters.NumberFilter(field_name="employee__estate_id")
+    process = filters.NumberFilter(field_name="employee__process_id")
+    cost_code = filters.CharFilter(field_name="employee__cost_code__cost_code", lookup_expr="icontains")
+
+    class Meta:
+        model = UserAccount
+        fields = ["user_status", "auth_provider", "is_active", "estate", "process", "cost_code"]
+
+
 class UserAdminViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -546,7 +558,7 @@ class UserAdminViewSet(
     queryset = UserAccount.objects.select_related("employee").order_by("display_name")
     serializer_class = UserAdminSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
-    filterset_fields = ["user_status", "auth_provider", "is_active"]
+    filterset_class = UserAdminFilter
     search_fields = ["email", "display_name"]
 
     def perform_update(self, serializer):
@@ -576,6 +588,14 @@ class UserAdminViewSet(
             },
             request=self.request,
         )
+
+    @extend_schema(summary="Employee details linked to this account")
+    @action(detail=True, methods=["get"])
+    def employee(self, request, pk=None):
+        user = self.get_object()
+        if user.employee is None:
+            return Response({"detail": "This account has no linked employee."}, status=404)
+        return Response(EmployeeAdminDetailSerializer(user.employee).data)
 
     @extend_schema(summary="Roles held by this user")
     @action(detail=True, methods=["get"])

@@ -20,6 +20,7 @@ import datetime as dt
 from django.db.models import Count, Q
 from django.utils import timezone
 
+from apps.accounts.roles import ESTATE_WIDE_ROLES, RoleCode
 from apps.calltree.models import CallTreeRun, Channel, RunStatus
 from apps.exemptions.models import Exemption, ExemptionStatus
 from apps.organization.models import CostCode
@@ -291,13 +292,59 @@ def _exemptions(version_ids: list[int]) -> dict:
     }
 
 
+def _narrowed_to_led_cost_codes(scope) -> bool:
+    """A BU lead or approver with no estate-wide role gets a "my plans"
+    dashboard, cut to the cost codes they lead rather than their whole
+    estate. Coordinators are deliberately left out of this cut: they are
+    also in `OWN_RECORD_ROLES`, but the dashboard has always shown them
+    their full estate, and narrowing that too was never asked for and would
+    be a bigger behavioural change than this one.
+    """
+    if not scope.is_authenticated or (scope.role_codes & ESTATE_WIDE_ROLES):
+        return False
+    return bool(scope.role_codes & {RoleCode.BU_LEAD, RoleCode.APPROVER})
+
+
+#: The per-cost-code table is for at-a-glance scanning, not a report -- past
+#: this many rows it stops being at-a-glance and the Reports page's estate
+#: detail export is the right tool anyway.
+MAX_DASHBOARD_COST_CODE_ROWS = 500
+
+
+def _cost_code_rows(cost_codes) -> list[dict]:
+    """Every in-scope cost code individually, by name and status — the
+    rollups above are aggregates and never show which cost code has which
+    status.
+    """
+    rows = (
+        cost_codes.select_related("estate")
+        .order_by("estate__estate_name", "cost_code")
+        .values("cost_code_id", "cost_code", "estate__estate_name", CURRENT_STATUS)[
+            :MAX_DASHBOARD_COST_CODE_ROWS
+        ]
+    )
+    return [
+        {
+            "cost_code_id": r["cost_code_id"],
+            "cost_code": r["cost_code"],
+            "estate_name": r["estate__estate_name"] or "",
+            "status": r[CURRENT_STATUS],
+        }
+        for r in rows
+    ]
+
+
 def build_dashboard(scope, *, estate_id: int | None = None, today: dt.date | None = None) -> dict:
     today = today or timezone.now().date()
     cost_codes = scoped_cost_codes(scope, estate_id)
+    narrowed = _narrowed_to_led_cost_codes(scope)
+    if narrowed:
+        cost_codes = cost_codes.filter(pk__in=scope.own_cost_code_ids())
     version_ids = current_version_ids(cost_codes)
     return {
         "generated_at": timezone.now().isoformat(),
         "estate_id": estate_id,
+        "narrowed_to_own": narrowed,
         "totals": _totals(cost_codes),
         "status_by_estate": _status_rollup(
             cost_codes, key="estate_id", label="estate__estate_name"
@@ -306,6 +353,7 @@ def build_dashboard(scope, *, estate_id: int | None = None, today: dt.date | Non
             cost_codes, key="region_id", label="region__region_name"
         ),
         "status_by_lob": _status_rollup(cost_codes, key="lob_id", label="lob__lob_name"),
+        "cost_codes": _cost_code_rows(cost_codes),
         "completion": _completion(version_ids),
         "risk": _risk(version_ids, today),
         "tests": _tests(cost_codes, today),

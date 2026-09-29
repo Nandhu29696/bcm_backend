@@ -7,6 +7,7 @@ from apps.plans import review_views, views
 app_name = "plans"
 
 urlpatterns = [
+    path("my-plans/", views.MyPlansView.as_view(), name="my-plans"),
     path(
         "cost-codes/<int:cost_code_id>/",
         views.CostCodeDetailView.as_view(),

@@ -18,11 +18,13 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, extend_schema_field
 from rest_framework import serializers
 from rest_framework import status as http_status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsActiveUser
+from apps.accounts.roles import RoleCode
 from apps.accounts.scoping import ScopeResolver
 from apps.core.tasks import enqueue_after_commit
 from apps.documents.models import EntityDocument
@@ -62,11 +64,14 @@ class ReportTypesView(APIView):
     permission_classes = [IsAuthenticated, IsActiveUser]
 
     def get(self, request, *args, **kwargs):
+        is_admin = ScopeResolver(request.user).has_role(RoleCode.ADMIN)
         return Response(
             {
                 "types": [
                     {"code": code, "label": label, "formats": sorted(services.FORMATS[code])}
                     for code, label in ReportType.choices
+                    # Account/role data, not plan data -- administrators only.
+                    if code != ReportType.USER_ACTIVITY or is_admin
                 ],
                 "schedules": [{"code": c, "label": lbl} for c, lbl in Schedule.choices],
             }
@@ -128,6 +133,9 @@ class CreateRequestSerializer(serializers.Serializer):
     report_format = serializers.ChoiceField(choices=ReportFormat.choices, default=ReportFormat.XLSX)
     schedule = serializers.ChoiceField(choices=Schedule.choices, default=Schedule.ONCE)
     estate_id = serializers.IntegerField(required=False, allow_null=True)
+    cost_code = serializers.CharField(required=False, allow_blank=True)
+    date_from = serializers.DateField(required=False, allow_null=True)
+    date_to = serializers.DateField(required=False, allow_null=True)
 
     def validate(self, attrs):
         if attrs["report_format"] not in services.FORMATS[attrs["report_type"]]:
@@ -161,6 +169,10 @@ class ReportRequestListView(APIView):
         body = CreateRequestSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         scope = ScopeResolver(request.user)
+        if body.validated_data["report_type"] == ReportType.USER_ACTIVITY and not scope.has_role(
+            RoleCode.ADMIN
+        ):
+            raise PermissionDenied("Administrators only.")
         parameters = {}
         requested_estate = body.validated_data.get("estate_id")
         if requested_estate is not None:
@@ -170,6 +182,12 @@ class ReportRequestListView(APIView):
                     {"estate_id": "That estate is not in your scope."}
                 )
             parameters["estate_id"] = estate_id
+        if body.validated_data.get("cost_code"):
+            parameters["cost_code"] = body.validated_data["cost_code"]
+        if body.validated_data.get("date_from"):
+            parameters["date_from"] = body.validated_data["date_from"].isoformat()
+        if body.validated_data.get("date_to"):
+            parameters["date_to"] = body.validated_data["date_to"].isoformat()
         created = services.create_request(
             user=request.user,
             report_type=body.validated_data["report_type"],
@@ -224,7 +242,11 @@ class EstateDetailReportView(APIView):
                 {"detail": "Unknown format.", "code": "bad_format", "field_errors": {}}, status=400
             )
         estate_id = _estate_in_scope(scope, request.query_params.get("estate"))
-        table = reports.build(ReportType.ESTATE_DETAIL, request.user, {"estate_id": estate_id})
+        params = {"estate_id": estate_id}
+        cost_code = request.query_params.get("cost_code")
+        if cost_code:
+            params["cost_code"] = cost_code
+        table = reports.build(ReportType.ESTATE_DETAIL, request.user, params)
         content, mime = exports.render(table, report_format)
         response = HttpResponse(content, content_type=mime)
         response["Content-Disposition"] = (

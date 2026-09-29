@@ -28,6 +28,55 @@ class EmployeeSummarySerializer(serializers.ModelSerializer):
         ]
 
 
+class EmployeeAdminDetailSerializer(serializers.ModelSerializer):
+    manager_employee = serializers.CharField(source="manager_employee.full_name", read_only=True, allow_null=True)
+    supervisor_employee = serializers.CharField(source="supervisor_employee.full_name", read_only=True, allow_null=True)
+    bu_lead = serializers.CharField(source="bu_lead.lead_name", read_only=True, allow_null=True)
+    bu_classification = serializers.CharField(source="bu_classification.classification_name", read_only=True, allow_null=True)
+    center = serializers.CharField(source="center.center_name", read_only=True, allow_null=True)
+    process = serializers.CharField(source="process.process_name", read_only=True, allow_null=True)
+    subprocess = serializers.CharField(source="subprocess.subprocess_name", read_only=True, allow_null=True)
+    cost_code = serializers.CharField(source="cost_code.cost_code", read_only=True, allow_null=True)
+    current_location = serializers.CharField(source="current_location.location_name", read_only=True, allow_null=True)
+    estate = serializers.CharField(source="estate.estate_name", read_only=True, allow_null=True)
+    location = serializers.CharField(source="location.location_name", read_only=True, allow_null=True)
+    region = serializers.CharField(source="region.region_name", read_only=True, allow_null=True)
+    lob = serializers.CharField(source="lob.lob_name", read_only=True, allow_null=True)
+    employee_group = serializers.CharField(source="employee_group.group_name", read_only=True, allow_null=True)
+    employee_grade = serializers.CharField(source="employee_grade.grade_name", read_only=True, allow_null=True)
+
+    class Meta:
+        model = Employee
+        fields = [
+            "employee_id",
+            "employee_number",
+            "full_name",
+            "email",
+            "designation",
+            "domain_name",
+            "gender",
+            "contact_number",
+            "employment_status",
+            "date_of_joining",
+            "last_working_date",
+            "manager_employee",
+            "supervisor_employee",
+            "bu_lead",
+            "bu_classification",
+            "center",
+            "process",
+            "subprocess",
+            "cost_code",
+            "current_location",
+            "estate",
+            "location",
+            "region",
+            "lob",
+            "employee_group",
+            "employee_grade",
+        ]
+
+
 class CurrentUserSerializer(serializers.ModelSerializer):
     """The `/auth/me/` payload.
 

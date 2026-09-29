@@ -31,7 +31,7 @@ from apps.core.models import AuditLog
 from apps.documents.models import EntityDocument
 from apps.documents.uploads import attach, store_upload
 from apps.plans.access import PlanVersionScopedMixin
-from apps.plans.childviews import NotAnAuthor, VersionNotEditable
+from apps.plans.childviews import NotAContentEditor, VersionNotEditable
 from apps.plans.models import PlanVersion
 
 #: What a plan author may attach, by `document_type`. Generated outputs
@@ -87,8 +87,8 @@ class _AttachmentViewBase(PlanVersionScopedMixin, APIView):
 
     def writable_version(self) -> PlanVersion:
         version = self.get_plan_version()
-        if not self.caller_may_author(version):
-            raise NotAnAuthor()
+        if not self.caller_may_edit_content(version):
+            raise NotAContentEditor()
         if not version.is_editable:
             raise VersionNotEditable(version)
         return version

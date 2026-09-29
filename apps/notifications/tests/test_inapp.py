@@ -237,6 +237,64 @@ class TestAdminResend:
         again = admin_client.post(reverse("notifications:admin-resend", args=[log.pk]))
         assert again.status_code == 409
 
+    def test_log_filters_by_estate_and_cost_code(self, admin_client):
+        """entity_type/entity_id is generic (AD-8) -- the filter resolves it."""
+        from apps.organization.models import CostCode, Estate, Process
+        from apps.plans.models import Plan, PlanStatus, PlanVersion
+
+        estate = Estate.objects.create(estate_name="Filter Estate")
+        other_estate = Estate.objects.create(estate_name="Other Estate")
+        process = Process.objects.create(process_name="Ops")
+        cost_code = CostCode.objects.create(cost_code="CC-SCOPE-1", estate=estate, process=process)
+        other_cost_code = CostCode.objects.create(
+            cost_code="CC-SCOPE-2", estate=other_estate, process=process
+        )
+        plan = Plan.objects.create(cost_code=cost_code, process=process)
+        other_plan = Plan.objects.create(cost_code=other_cost_code, process=process)
+        version = PlanVersion.objects.create(plan=plan, version_number=1, status=PlanStatus.APPROVED)
+        other_version = PlanVersion.objects.create(
+            plan=other_plan, version_number=1, status=PlanStatus.APPROVED
+        )
+
+        in_scope = send_notification(
+            event_type=NotificationEvent.PLAN_APPROVED,
+            to_email="lead@example.com",
+            subject="In scope",
+            template_name="plan_approved",
+            context={"cost_code": cost_code.cost_code, "plan_version_id": version.pk, "bu_lead_name": "Lead"},
+            entity_type="PLAN_VERSION",
+            entity_id=version.pk,
+        )
+        out_of_scope = send_notification(
+            event_type=NotificationEvent.PLAN_APPROVED,
+            to_email="lead@example.com",
+            subject="Out of scope",
+            template_name="plan_approved",
+            context={"cost_code": other_cost_code.cost_code, "plan_version_id": other_version.pk, "bu_lead_name": "Lead"},
+            entity_type="PLAN_VERSION",
+            entity_id=other_version.pk,
+        )
+        # No cost-code/estate concept at all -- must never match a scope filter.
+        no_scope = send_notification(
+            event_type=NotificationEvent.OTP_CODE,
+            to_email="someone@example.com",
+            subject="Your code",
+            template_name="otp_code",
+            context={"code": "000000"},
+        )
+
+        by_estate = admin_client.get(reverse("notifications:admin-log"), {"estate": estate.pk})
+        assert {r["notification_log_id"] for r in by_estate.data["results"]} == {in_scope.pk}
+
+        by_cost_code = admin_client.get(
+            reverse("notifications:admin-log"), {"cost_code": "SCOPE-2"}
+        )
+        assert {r["notification_log_id"] for r in by_cost_code.data["results"]} == {out_of_scope.pk}
+
+        unfiltered = admin_client.get(reverse("notifications:admin-log"))
+        ids = {r["notification_log_id"] for r in unfiltered.data["results"]}
+        assert {in_scope.pk, out_of_scope.pk, no_scope.pk} <= ids
+
     def test_credentials_cannot_be_resent_and_non_admins_are_refused(self, admin_client, lead):
         from apps.notifications.models import NotificationLog
 

@@ -171,12 +171,13 @@ def build_questionnaire(version: PlanVersion, context: str = AnswerContext.BCP) 
                 "questions": [
                     _question_payload(
                         q,
+                        question_number,
                         answers.get(q.question_id),
                         visibility,
                         comment_counts,
                         evidence.get(q.question_id, []),
                     )
-                    for q in s.questions
+                    for question_number, q in enumerate(s.questions, start=1)
                 ],
             }
             for s in sections
@@ -186,6 +187,7 @@ def build_questionnaire(version: PlanVersion, context: str = AnswerContext.BCP) 
 
 def _question_payload(
     question: Question,
+    question_number: int,
     answer: QuestionAnswer | None,
     visibility: dict[int, bool],
     comment_counts: dict[int, int],
@@ -193,6 +195,7 @@ def _question_payload(
 ) -> dict:
     payload = {
         "question_id": question.question_id,
+        "question_number": question_number,
         "question_code": question.question_code,
         "question_text": question.question_text,
         "question_description": question.question_description,

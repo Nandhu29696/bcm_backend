@@ -230,6 +230,9 @@ def create_event(
     return event
 
 
+_TERMINAL_STATUSES = {CrisisEvent.Status.CLOSED, CrisisEvent.Status.CANCELLED}
+
+
 def _move(event: CrisisEvent, to_status: str, *, actor) -> CrisisEvent:
     if to_status not in EVENT_TRANSITIONS[CrisisEvent.Status(event.status)]:
         raise InvalidStateTransition(
@@ -237,7 +240,11 @@ def _move(event: CrisisEvent, to_status: str, *, actor) -> CrisisEvent:
         )
     previous = event.status
     event.status = to_status
-    event.save(update_fields=["status"])
+    update_fields = ["status"]
+    if to_status in _TERMINAL_STATUSES and event.closed_at is None:
+        event.closed_at = timezone.now()
+        update_fields.append("closed_at")
+    event.save(update_fields=update_fields)
     record_audit(
         action=AuditLog.Action.STATUS_TRANSITION,
         actor=actor,

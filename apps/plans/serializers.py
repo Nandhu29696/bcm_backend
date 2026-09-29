@@ -215,6 +215,12 @@ class PlanVersionSerializer(serializers.ModelSerializer):
     process_name = serializers.CharField(
         source="plan.cost_code.process.process_name", default="", read_only=True
     )
+    subprocess_name = serializers.CharField(
+        source="plan.cost_code.subprocess.subprocess_name", default="", read_only=True
+    )
+    region_name = serializers.CharField(
+        source="plan.cost_code.region.region_name", default="", read_only=True
+    )
     estate_name = serializers.CharField(
         source="plan.cost_code.estate.estate_name", default="", read_only=True
     )
@@ -230,6 +236,8 @@ class PlanVersionSerializer(serializers.ModelSerializer):
             "cost_code_id",
             "cost_code",
             "process_name",
+            "subprocess_name",
+            "region_name",
             "estate_name",
             "bu_lead_name",
             "version_number",
@@ -273,6 +281,38 @@ class PlanVersionSerializer(serializers.ModelSerializer):
             }
             for assignment in version.coordinator_assignments.all()
             if assignment.active_flag
+        ]
+
+
+class MyPlanSerializer(serializers.ModelSerializer):
+    """The current version of a plan claimed by its signed-in owner."""
+
+    plan_id = serializers.IntegerField(read_only=True)
+    cost_code_id = serializers.IntegerField(source="plan.cost_code_id", read_only=True)
+    cost_code = serializers.CharField(source="plan.cost_code.cost_code", read_only=True)
+    process_name = serializers.CharField(
+        source="plan.cost_code.process.process_name", default="", read_only=True
+    )
+    estate_name = serializers.CharField(
+        source="plan.cost_code.estate.estate_name", default="", read_only=True
+    )
+    bu_lead_name = serializers.CharField(
+        source="plan.cost_code.bu_lead.lead_name", default="", read_only=True
+    )
+
+    class Meta:
+        model = PlanVersion
+        fields = [
+            "plan_version_id",
+            "plan_id",
+            "cost_code_id",
+            "cost_code",
+            "process_name",
+            "estate_name",
+            "bu_lead_name",
+            "version_number",
+            "status",
+            "updated_at",
         ]
 
 

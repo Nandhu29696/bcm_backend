@@ -77,11 +77,19 @@ def test_a_viewer_can_read_but_not_write(viewer_client, version, risk):
     assert viewer_client.get(risks_url(version)).status_code == 200
     response = viewer_client.post(risks_url(version), {"risk_name": "x"})
     assert response.status_code == 403
-    assert response.data["code"] == "not_an_author"
+    assert response.data["code"] == "not_a_content_editor"
 
 
 def test_an_unassigned_coordinator_cannot_write(onlooker_client, version):
     assert onlooker_client.post(risks_url(version), {"risk_name": "x"}).status_code == 403
+
+
+def test_an_assigned_coordinator_cannot_write(assigned_coordinator_client, version):
+    """A coordinator's assignment authorises answering, not editing the risk
+    register -- even for the plan they are actively assigned to."""
+    response = assigned_coordinator_client.post(risks_url(version), {"risk_name": "x"})
+    assert response.status_code == 403
+    assert response.data["code"] == "not_a_content_editor"
 
 
 @pytest.mark.parametrize("status", [PlanStatus.APPROVED, PlanStatus.EXEMPTED])

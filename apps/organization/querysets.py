@@ -119,6 +119,32 @@ def status_rollup_by_estate(estate_ids) -> dict[int, dict[str, int]]:
     return rollup
 
 
+def process_rollup(queryset: QuerySet) -> list[dict[str, object]]:
+    """Return scoped process summaries from an annotated cost-code queryset."""
+    rows = (
+        with_current_status(queryset.filter(process_id__isnull=False, active_flag=True))
+        .order_by()
+        .values("process_id", "process__process_name", CURRENT_STATUS)
+        .annotate(total=Count("cost_code_id"))
+    )
+    summaries: dict[int, dict[str, object]] = {}
+    for row in rows:
+        process_id = row["process_id"]
+        summary = summaries.setdefault(
+            process_id,
+            {
+                "process_id": process_id,
+                "process_name": row["process__process_name"],
+                "cost_code_count": 0,
+                "status_rollup": empty_rollup(),
+            },
+        )
+        summary["cost_code_count"] = summary["cost_code_count"] + row["total"]
+        summary["status_rollup"][row[CURRENT_STATUS]] = row["total"]
+
+    return sorted(summaries.values(), key=lambda summary: str(summary["process_name"]).lower())
+
+
 def empty_rollup() -> dict[str, int]:
     """Every status at zero — so the UI can render a stable set of columns."""
     return {status.value: 0 for status in PlanStatus}
@@ -128,6 +154,7 @@ __all__ = [
     "CURRENT_STATUS",
     "cost_code_list_queryset",
     "empty_rollup",
+    "process_rollup",
     "status_rollup_by_estate",
     "with_current_status",
 ]

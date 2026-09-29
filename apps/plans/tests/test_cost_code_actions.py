@@ -54,6 +54,20 @@ def test_a_viewer_cannot_edit(api_client, user_factory, org):
     assert org["cost_code"].cost_code == "CC-1001"
 
 
+def test_a_coordinator_cannot_edit_or_start_a_plan(coordinator_client, org):
+    """A coordinator's assignment authorises answering a plan, not editing the
+    cost code or starting its first version -- administrators only now."""
+    response = coordinator_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-NEW"})
+    assert response.status_code == 403
+    org["cost_code"].refresh_from_db()
+    assert org["cost_code"].cost_code == "CC-1001"
+
+    other = CostCode.objects.create(
+        cost_code="CC-NOPLAN", estate=org["estate"], process=org["process"]
+    )
+    assert coordinator_client.post(versions_url(other)).status_code == 403
+
+
 def test_a_viewer_can_still_read(api_client, user_factory, org):
     from apps.accounts.models import UserEstateScope
 
@@ -69,9 +83,9 @@ def test_a_viewer_can_still_read(api_client, user_factory, org):
 # --------------------------------------------------------------------------- #
 
 
-def test_edit_updates_and_returns_the_detail_shape(coordinator_client, org):
+def test_edit_updates_and_returns_the_detail_shape(admin_client, org):
     """The response must be the full shape — the drawer re-renders from it."""
-    response = coordinator_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-1001-A"})
+    response = admin_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-1001-A"})
     assert response.status_code == 200
     assert response.data["cost_code"] == "CC-1001-A"
     # Untouched relations still come back labelled, not blank.
@@ -79,8 +93,8 @@ def test_edit_updates_and_returns_the_detail_shape(coordinator_client, org):
     assert response.data["estate"]["name"] == "Alpha Estate"
 
 
-def test_edit_writes_an_audit_entry_of_only_what_changed(coordinator_client, org, actor):
-    coordinator_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-1001-B"})
+def test_edit_writes_an_audit_entry_of_only_what_changed(admin_client, org, actor):
+    admin_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-1001-B"})
 
     entry = AuditLog.objects.filter(entity_type="CostCode", entity_id=org["cost_code"].pk).latest(
         "created_at"
@@ -90,16 +104,16 @@ def test_edit_writes_an_audit_entry_of_only_what_changed(coordinator_client, org
     assert entry.detail["changed"] == {"cost_code": {"from": "CC-1001", "to": "CC-1001-B"}}
 
 
-def test_a_no_op_edit_writes_no_audit_entry(coordinator_client, org):
+def test_a_no_op_edit_writes_no_audit_entry(admin_client, org):
     """An audit trail full of empty saves hides the edits that mattered."""
     before = AuditLog.objects.filter(entity_type="CostCode").count()
-    coordinator_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-1001"})
+    admin_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-1001"})
     assert AuditLog.objects.filter(entity_type="CostCode").count() == before
 
 
-def test_the_estate_cannot_be_changed(coordinator_client, org):
+def test_the_estate_cannot_be_changed(admin_client, org):
     """Moving a cost code between estates is a migration, not an edit."""
-    response = coordinator_client.patch(
+    response = admin_client.patch(
         detail_url(org["cost_code"]), {"estate": org["other_estate"].estate_id}
     )
     assert response.status_code == 200
@@ -107,21 +121,21 @@ def test_the_estate_cannot_be_changed(coordinator_client, org):
     assert org["cost_code"].estate_id == org["estate"].estate_id
 
 
-def test_a_blank_cost_code_is_rejected(coordinator_client, org):
-    response = coordinator_client.patch(detail_url(org["cost_code"]), {"cost_code": "  "})
+def test_a_blank_cost_code_is_rejected(admin_client, org):
+    response = admin_client.patch(detail_url(org["cost_code"]), {"cost_code": "  "})
     assert response.status_code == 400
 
 
-def test_a_duplicate_cost_code_in_the_same_estate_is_rejected(coordinator_client, org):
+def test_a_duplicate_cost_code_in_the_same_estate_is_rejected(admin_client, org):
     CostCode.objects.create(cost_code="CC-2002", estate=org["estate"])
-    response = coordinator_client.patch(detail_url(org["cost_code"]), {"cost_code": "cc-2002"})
+    response = admin_client.patch(detail_url(org["cost_code"]), {"cost_code": "cc-2002"})
     assert response.status_code == 400
     assert "cost_code" in response.data["field_errors"]
 
 
-def test_the_same_code_may_exist_in_another_estate(coordinator_client, org):
+def test_the_same_code_may_exist_in_another_estate(admin_client, org):
     CostCode.objects.create(cost_code="CC-SHARED", estate=org["other_estate"])
-    response = coordinator_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-SHARED"})
+    response = admin_client.patch(detail_url(org["cost_code"]), {"cost_code": "CC-SHARED"})
     assert response.status_code == 200
 
 
@@ -130,44 +144,44 @@ def test_the_same_code_may_exist_in_another_estate(coordinator_client, org):
 # --------------------------------------------------------------------------- #
 
 
-def test_a_subprocess_from_another_process_is_rejected(coordinator_client, org):
+def test_a_subprocess_from_another_process_is_rejected(admin_client, org):
     """Nothing in the schema forbids this, and the result is silently wrong."""
     other_process = Process.objects.create(process_name="Finance Operations")
     foreign = Subprocess.objects.create(subprocess_name="Accounts Payable", process=other_process)
 
-    response = coordinator_client.patch(
+    response = admin_client.patch(
         detail_url(org["cost_code"]), {"subprocess": foreign.subprocess_id}
     )
     assert response.status_code == 400
     assert "subprocess" in response.data["field_errors"]
 
 
-def test_a_matching_subprocess_is_accepted(coordinator_client, org):
+def test_a_matching_subprocess_is_accepted(admin_client, org):
     sibling = Subprocess.objects.create(subprocess_name="Tier 2", process=org["process"])
-    response = coordinator_client.patch(
+    response = admin_client.patch(
         detail_url(org["cost_code"]), {"subprocess": sibling.subprocess_id}
     )
     assert response.status_code == 200
     assert response.data["subprocess"]["name"] == "Tier 2"
 
 
-def test_changing_process_and_subprocess_together_is_validated_as_a_pair(coordinator_client, org):
+def test_changing_process_and_subprocess_together_is_validated_as_a_pair(admin_client, org):
     """The new subprocess is checked against the incoming process, not the stored one."""
     finance = Process.objects.create(process_name="Finance Operations")
     payables = Subprocess.objects.create(subprocess_name="Payables", process=finance)
 
-    response = coordinator_client.patch(
+    response = admin_client.patch(
         detail_url(org["cost_code"]),
         {"process": finance.process_id, "subprocess": payables.subprocess_id},
     )
     assert response.status_code == 200
 
 
-def test_a_location_in_another_region_is_rejected(coordinator_client, org):
+def test_a_location_in_another_region_is_rejected(admin_client, org):
     south = Region.objects.create(region_name="South", geography="Asia")
     location = Location.objects.create(location_name="Chennai", region=south)
 
-    response = coordinator_client.patch(
+    response = admin_client.patch(
         detail_url(org["cost_code"]),
         {"region": org["region"].region_id, "location": location.location_id},
     )
@@ -175,12 +189,12 @@ def test_a_location_in_another_region_is_rejected(coordinator_client, org):
     assert "location" in response.data["field_errors"]
 
 
-def test_a_center_outside_the_location_is_rejected(coordinator_client, org):
+def test_a_center_outside_the_location_is_rejected(admin_client, org):
     location = Location.objects.create(location_name="Bangalore", region=org["region"])
     elsewhere = Location.objects.create(location_name="Pune", region=org["region"])
     center = Center.objects.create(center_name="Pune Tech Park", location=elsewhere)
 
-    response = coordinator_client.patch(
+    response = admin_client.patch(
         detail_url(org["cost_code"]),
         {"location": location.location_id, "center": center.center_id},
     )
@@ -188,8 +202,8 @@ def test_a_center_outside_the_location_is_rejected(coordinator_client, org):
     assert "center" in response.data["field_errors"]
 
 
-def test_clearing_a_relation_is_allowed(coordinator_client, org):
-    response = coordinator_client.patch(
+def test_clearing_a_relation_is_allowed(admin_client, org):
+    response = admin_client.patch(
         detail_url(org["cost_code"]), {"subprocess": None}, format="json"
     )
     assert response.status_code == 200
@@ -252,8 +266,8 @@ def test_the_version_list_names_its_coordinators(coordinator_client, approved_ve
     assert [c["name"] for c in coordinators] == ["Arun Coordinator"]
 
 
-def test_posting_creates_the_plan_and_first_version(coordinator_client, org):
-    response = coordinator_client.post(versions_url(org["cost_code"]))
+def test_posting_creates_the_plan_and_first_version(admin_client, org):
+    response = admin_client.post(versions_url(org["cost_code"]))
 
     assert response.status_code == 201
     assert response.data["version_number"] == 1
@@ -261,9 +275,9 @@ def test_posting_creates_the_plan_and_first_version(coordinator_client, org):
     assert Plan.objects.filter(cost_code=org["cost_code"]).exists()
 
 
-def test_posting_twice_returns_the_same_version(coordinator_client, org):
-    first = coordinator_client.post(versions_url(org["cost_code"]))
-    second = coordinator_client.post(versions_url(org["cost_code"]))
+def test_posting_twice_returns_the_same_version(admin_client, org):
+    first = admin_client.post(versions_url(org["cost_code"]))
+    second = admin_client.post(versions_url(org["cost_code"]))
 
     assert first.status_code == 201
     assert second.status_code == 200
@@ -271,10 +285,10 @@ def test_posting_twice_returns_the_same_version(coordinator_client, org):
     assert PlanVersion.objects.count() == 1
 
 
-def test_a_cost_code_with_no_process_cannot_have_a_plan(coordinator_client, org):
+def test_a_cost_code_with_no_process_cannot_have_a_plan(admin_client, org):
     """`plans` requires a process, so this must be a stated 400, not an IntegrityError."""
     orphan = CostCode.objects.create(cost_code="CC-NOPROC", estate=org["estate"])
-    response = coordinator_client.post(versions_url(orphan))
+    response = admin_client.post(versions_url(orphan))
     assert response.status_code == 400
     assert response.data["code"] == "cost_code_has_no_process"
 

@@ -354,6 +354,17 @@ class TestMonitoringApi:
         api_client.force_authenticate(user=outsider)
         assert api_client.get(reverse("calltree:run-detail", args=[run.pk])).status_code == 404
 
+    def test_provider_status_reflects_the_kill_switch(self, coordinator_client, settings):
+        settings.TWILIO_ENABLED = False
+        settings.TEAMS_ENABLED = False
+        off = coordinator_client.get(reverse("calltree:provider-status"))
+        assert off.status_code == 200
+        assert off.data == {"VOICE": False, "MS_TEAMS": False, "EMAIL": True}
+
+        settings.TWILIO_ENABLED = True
+        on = coordinator_client.get(reverse("calltree:provider-status"))
+        assert on.data["VOICE"] is True
+
     def test_result_helper_defaults(self):
         result = ProviderResult(status="x")
         assert not result.reached and not result.pending

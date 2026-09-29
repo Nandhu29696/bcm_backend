@@ -30,9 +30,6 @@ ALL_ESTATE_ROLES = frozenset({RoleCode.ADMIN, RoleCode.AUDITOR})
 #: Roles permitted to approve or send back a plan version (journey step 7).
 APPROVAL_ROLES = frozenset({RoleCode.BU_LEAD, RoleCode.APPROVER, RoleCode.ADMIN})
 
-#: Roles permitted to author plan content (journey step 5).
-AUTHORING_ROLES = frozenset({RoleCode.COORDINATOR, RoleCode.ADMIN})
-
 #: Roles that may only read.
 READ_ONLY_ROLES = frozenset({RoleCode.VIEWER, RoleCode.AUDITOR})
 

@@ -94,9 +94,10 @@ def _notify_decision(exemption: Exemption, *, actor, comment: str) -> None:
 
 @transaction.atomic
 def request_exemption(
-    version: PlanVersion, *, actor, reason: str, answers: dict | None = None
+    version: PlanVersion, *, actor, reason: str, comment: str = "", answers: dict | None = None
 ) -> Exemption:
     reason = (reason or "").strip()
+    comment = (comment or "").strip()
     if not reason:
         raise ReasonRequired()
     # Any still-open version can ask - including one never started, which is
@@ -122,7 +123,7 @@ def request_exemption(
         exemption=exemption,
         author=actor,
         comment_type=CommentType.GENERAL,
-        comment=reason,
+        comment=comment or reason,
         status=ExemptionStatus.PENDING,
     )
     record_audit(

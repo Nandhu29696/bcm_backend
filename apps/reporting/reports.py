@@ -18,7 +18,10 @@ from dataclasses import dataclass, field
 from django.conf import settings
 from django.db.models import Max, Prefetch
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied
 
+from apps.accounts.models import UserAccount
+from apps.accounts.roles import RoleCode
 from apps.accounts.scoping import ScopeResolver
 from apps.calltree.models import CallTreeRun
 from apps.core.exceptions import DomainError
@@ -55,15 +58,32 @@ def _scope(user) -> ScopeResolver:
     return ScopeResolver(user)
 
 
+def _apply_cost_code_filter(cost_codes, params: dict):
+    """`cost_code` narrows any report to one cost code (or a text match)."""
+    cost_code = (params.get("cost_code") or "").strip()
+    return cost_codes.filter(cost_code__icontains=cost_code) if cost_code else cost_codes
+
+
+def _apply_date_range(rows, params: dict, field: str):
+    """`date_from`/`date_to` (both optional, both inclusive) narrow a report
+    to the rows whose `field` falls in that range — the run/assignment/request
+    date, depending on the report; there is no one universal "the" date."""
+    date_from = params.get("date_from")
+    date_to = params.get("date_to")
+    if date_from:
+        rows = rows.filter(**{f"{field}__date__gte": date_from})
+    if date_to:
+        rows = rows.filter(**{f"{field}__date__lte": date_to})
+    return rows
+
+
 def estate_detail(user, params: dict) -> Table:
     estate_id = params.get("estate_id")
-    cost_codes = (
-        scoped_cost_codes(_scope(user), estate_id)
-        .select_related(
-            "estate", "process", "subprocess", "region", "center", "location", "lob", "bu_lead"
-        )
-        .order_by("estate__estate_name", "cost_code")
-    )
+    cost_codes = _apply_cost_code_filter(
+        scoped_cost_codes(_scope(user), estate_id), params
+    ).select_related(
+        "estate", "process", "subprocess", "region", "center", "location", "lob", "bu_lead"
+    ).order_by("estate__estate_name", "cost_code")
     version_ids = current_version_ids(cost_codes)
     versions = {
         v.pk: v
@@ -145,17 +165,17 @@ def estate_detail(user, params: dict) -> Table:
 
 def coordinator_assignments(user, params: dict) -> Table:
     estate_id = params.get("estate_id")
-    cost_codes = scoped_cost_codes(_scope(user), estate_id)
+    cost_codes = _apply_cost_code_filter(scoped_cost_codes(_scope(user), estate_id), params)
     version_ids = current_version_ids(cost_codes)
-    rows = (
-        CoordinatorAssignment.objects.filter(plan_version_id__in=version_ids, active_flag=True)
-        .select_related(
-            "employee",
-            "plan_version__plan__cost_code__estate",
-            "plan_version__plan__cost_code__process",
-        )
-        .order_by("plan_version__plan__cost_code__cost_code", "coordinator_type")
-    )
+    rows = _apply_date_range(
+        CoordinatorAssignment.objects.filter(plan_version_id__in=version_ids, active_flag=True),
+        params,
+        "created_at",
+    ).select_related(
+        "employee",
+        "plan_version__plan__cost_code__estate",
+        "plan_version__plan__cost_code__process",
+    ).order_by("plan_version__plan__cost_code__cost_code", "coordinator_type")
     table = Table(
         title="Coordinator assignment report",
         subtitle=f"{_estate_label(estate_id)} - {timezone.now():%d %b %Y %H:%M}",
@@ -196,13 +216,14 @@ def coordinator_assignments(user, params: dict) -> Table:
 def call_tree_runs(user, params: dict) -> Table:
     estate_id = params.get("estate_id")
     cost_code_ids = list(
-        scoped_cost_codes(_scope(user), estate_id).order_by().values_list("cost_code_id", flat=True)
+        _apply_cost_code_filter(scoped_cost_codes(_scope(user), estate_id), params)
+        .order_by()
+        .values_list("cost_code_id", flat=True)
     )
-    runs = (
-        CallTreeRun.objects.filter(cost_code_id__in=cost_code_ids)
-        .select_related("cost_code", "initiated_by")
-        .prefetch_related("members__attempts")
-        .order_by("-started_at")
+    runs = _apply_date_range(
+        CallTreeRun.objects.filter(cost_code_id__in=cost_code_ids), params, "started_at"
+    ).select_related("cost_code", "initiated_by").prefetch_related("members__attempts").order_by(
+        "-started_at"
     )
     table = Table(
         title="Call tree run report",
@@ -254,16 +275,16 @@ def call_tree_runs(user, params: dict) -> Table:
 
 def exemption_register(user, params: dict) -> Table:
     estate_id = params.get("estate_id")
-    version_ids = current_version_ids(scoped_cost_codes(_scope(user), estate_id))
-    rows = (
-        Exemption.objects.filter(plan_version_id__in=version_ids)
-        .select_related(
-            "plan_version__plan__cost_code__estate",
-            "plan_version__plan__cost_code__process",
-            "requested_by",
-        )
-        .order_by("-created_at")
+    version_ids = current_version_ids(
+        _apply_cost_code_filter(scoped_cost_codes(_scope(user), estate_id), params)
     )
+    rows = _apply_date_range(
+        Exemption.objects.filter(plan_version_id__in=version_ids), params, "created_at"
+    ).select_related(
+        "plan_version__plan__cost_code__estate",
+        "plan_version__plan__cost_code__process",
+        "requested_by",
+    ).order_by("-created_at")
     table = Table(
         title="Exemption register",
         subtitle=f"{_estate_label(estate_id)} - {timezone.now():%d %b %Y %H:%M}",
@@ -356,12 +377,66 @@ def dashboard_summary(user, params: dict) -> Table:
     return table
 
 
+def user_report(user, params: dict) -> Table:
+    """Administrators only: this is account/role data, not plan data, so it
+    does not go through the estate-scoping every other report uses."""
+    if not _scope(user).has_role(RoleCode.ADMIN):
+        raise PermissionDenied("Administrators only.")
+
+    cost_code = (params.get("cost_code") or "").strip()
+    rows = UserAccount.objects.select_related(
+        "employee", "employee__estate", "employee__process", "employee__cost_code"
+    ).order_by("display_name")
+    if cost_code:
+        rows = rows.filter(employee__cost_code__cost_code__icontains=cost_code)
+    rows = _apply_date_range(rows, params, "last_login")
+
+    table = Table(
+        title="User report",
+        subtitle=f"{timezone.now():%d %b %Y %H:%M}",
+        columns=[
+            "Name",
+            "Email",
+            "Status",
+            "Sign-in method",
+            "MFA",
+            "Roles",
+            "Employee no.",
+            "Estate",
+            "Process",
+            "Cost code",
+            "Last sign-in",
+            "Created",
+        ],
+    )
+    for u in rows:
+        employee = u.employee
+        table.rows.append(
+            [
+                u.display_name,
+                u.email,
+                u.user_status,
+                "Password" if u.auth_provider == "local" else u.auth_provider.title(),
+                "On" if u.mfa_enabled else "Off",
+                ", ".join(sorted(u.role_codes)) or "",
+                employee.employee_number if employee else "",
+                employee.estate.estate_name if employee and employee.estate_id else "",
+                employee.process.process_name if employee and employee.process_id else "",
+                employee.cost_code.cost_code if employee and employee.cost_code_id else "",
+                u.last_login,
+                u.created_at,
+            ]
+        )
+    return table
+
+
 BUILDERS = {
     ReportType.ESTATE_DETAIL: estate_detail,
     ReportType.COORDINATOR_ASSIGNMENTS: coordinator_assignments,
     ReportType.CALL_TREE_RUNS: call_tree_runs,
     ReportType.EXEMPTION_REGISTER: exemption_register,
     ReportType.DASHBOARD_SUMMARY: dashboard_summary,
+    ReportType.USER_ACTIVITY: user_report,
 }
 
 

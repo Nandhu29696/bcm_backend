@@ -209,8 +209,90 @@ def _require_admin(request, view) -> None:
         raise PermissionDenied("Administrators only.")
 
 
+# `entity_type` is a free-text label written at send time (see apps/*/services.py
+# call sites), and both an UPPER_CASE and a PascalCase spelling exist in the data
+# for the same kind of entity -- not something to silently normalise here. Each
+# entry maps every spelling actually in use to the ORM path from that model down
+# to a CostCode, so an Estate/Cost-code filter can resolve which entity_id values
+# on THIS entity_type belong to the requested scope.
+_ENTITY_COST_CODE_PATHS: dict[str, str | None] = {
+    "PlanVersion": "plan__cost_code",
+    "PLAN_VERSION": "plan__cost_code",
+    "CoordinatorAssignment": "plan_version__plan__cost_code",
+    "Exemption": "plan_version__plan__cost_code",
+    "EXEMPTION": "plan_version__plan__cost_code",
+    "CrisisEvent": "cost_code",
+    "CRISIS_EVENT": "cost_code",
+    "CallTreeRun": "cost_code",
+    "CALL_TREE_RUN": "cost_code",
+    "Test": "plan_version__plan__cost_code",
+    "CostCode": None,  # the entity IS the cost code; see below.
+}
+
+
+def _entity_model(entity_type: str):
+    from apps.calltree.models import CallTreeRun
+    from apps.crisis.models import CrisisEvent
+    from apps.exemptions.models import Exemption
+    from apps.organization.models import CostCode
+    from apps.plans.models import CoordinatorAssignment, PlanVersion
+    from apps.testing.models import Test
+
+    return {
+        "PlanVersion": PlanVersion,
+        "PLAN_VERSION": PlanVersion,
+        "CoordinatorAssignment": CoordinatorAssignment,
+        "Exemption": Exemption,
+        "EXEMPTION": Exemption,
+        "CrisisEvent": CrisisEvent,
+        "CRISIS_EVENT": CrisisEvent,
+        "CallTreeRun": CallTreeRun,
+        "CALL_TREE_RUN": CallTreeRun,
+        "Test": Test,
+        "CostCode": CostCode,
+    }.get(entity_type)
+
+
+def _scope_to_notification_filter(estate_id: str, cost_code: str) -> Q | None:
+    """A Q matching only rows whose entity resolves into the requested scope.
+
+    `entity_type`/`entity_id` is a generic reference (AD-8), so this is a
+    fan-out: for every entity kind that has a knowable path to a cost code,
+    resolve which ids on THAT kind match, then OR the per-type results
+    together. Entity kinds with no cost-code/estate concept (OTP challenges,
+    user accounts, report requests, ...) never match and are correctly
+    excluded rather than silently ignored.
+    """
+    if not estate_id and not cost_code:
+        return None
+
+    combined = Q(pk__in=[])  # matches nothing until a branch below adds to it
+    for entity_type, path in _ENTITY_COST_CODE_PATHS.items():
+        model = _entity_model(entity_type)
+        if model is None:
+            continue
+        if path is None:
+            # CostCode is the entity itself.
+            filters = Q()
+            if estate_id:
+                filters &= Q(estate_id=estate_id)
+            if cost_code:
+                filters &= Q(cost_code__icontains=cost_code)
+            ids = set(model.objects.filter(filters).values_list("pk", flat=True))
+        else:
+            filters = Q()
+            if estate_id:
+                filters &= Q(**{f"{path}__estate_id": estate_id})
+            if cost_code:
+                filters &= Q(**{f"{path}__cost_code__icontains": cost_code})
+            ids = set(model.objects.filter(filters).values_list("pk", flat=True))
+        if ids:
+            combined |= Q(entity_type=entity_type, entity_id__in=ids)
+    return combined
+
+
 class NotificationLogAdminView(APIView):
-    """GET /admin/notifications/?status=FAILED&search= - the delivery log."""
+    """GET /admin/notifications/?status=FAILED&search=&estate=&cost_code= - the delivery log."""
 
     permission_classes = [IsAuthenticated, IsActiveUser]
 
@@ -223,6 +305,11 @@ class NotificationLogAdminView(APIView):
         search = (request.query_params.get("search") or "").strip()
         if search:
             rows = rows.filter(Q(to_email__icontains=search) | Q(subject__icontains=search))
+        estate_id = request.query_params.get("estate", "")
+        cost_code = (request.query_params.get("cost_code") or "").strip()
+        scope_filter = _scope_to_notification_filter(estate_id, cost_code)
+        if scope_filter is not None:
+            rows = rows.filter(scope_filter)
         counts = dict.fromkeys(DeliveryStatus.values, 0)
         for row in NotificationLog.objects.values("status").annotate(n=Count("pk")):
             counts[row["status"]] = row["n"]

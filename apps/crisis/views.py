@@ -192,6 +192,7 @@ class CrisisEventSerializer(serializers.ModelSerializer):
             "call_tree_run",
             "created_by_name",
             "created_at",
+            "closed_at",
             "can_manage",
         ]
 

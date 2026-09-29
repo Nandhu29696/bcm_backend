@@ -77,6 +77,7 @@ class ExemptionSerializer(serializers.ModelSerializer):
 
 class RequestSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=4000)
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=4000, default="")
     answer_1 = serializers.CharField(required=False, allow_blank=True, max_length=500, default="")
     answer_2 = serializers.CharField(required=False, allow_blank=True, max_length=500, default="")
     answer_3 = serializers.CharField(required=False, allow_blank=True, max_length=500, default="")
@@ -110,6 +111,7 @@ class VersionExemptionsView(PlanVersionScopedMixin, APIView):
             version,
             actor=request.user,
             reason=body.validated_data["reason"],
+            comment=body.validated_data["comment"],
             answers=body.validated_data,
         )
         return Response(ExemptionSerializer(exemption).data, status=http_status.HTTP_201_CREATED)

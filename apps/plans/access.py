@@ -73,12 +73,19 @@ class PlanVersionScopedMixin(ScopedQuerySetMixin):
         return caller_may_approve(self.get_scope(), version)
 
     def caller_may_author(self, version: PlanVersion) -> bool:
-        """May the caller change this version's content?
+        """May the caller answer this version's questionnaire, request or
+        resubmit an exemption on it, or submit it for review?
 
-        Authoring needs an authoring role *and* a claim on the version: admins
-        always; a coordinator only when actively assigned to it. Being able to
-        see a plan (estate scope) is deliberately not enough to edit it — a
-        coordinator granted an estate still edits only the plans they own.
+        Needs an authoring role *and* a claim on the version: admins always; a
+        coordinator only when actively assigned to it. Being able to see a
+        plan (estate scope) is deliberately not enough — a coordinator granted
+        an estate still answers only the plans they own.
+
+        This is deliberately narrower than "edit this plan" — a coordinator's
+        assignment authorises answering, not editing the plan's other
+        structured content (risk register, BIA sub-forms, recovery strategy,
+        documents) or its cost-code metadata. See `caller_may_edit_content`
+        for that boundary.
         """
         scope = self.get_scope()
         if scope.has_role(RoleCode.ADMIN):
@@ -91,6 +98,17 @@ class PlanVersionScopedMixin(ScopedQuerySetMixin):
         return CoordinatorAssignment.objects.filter(
             plan_version=version, employee_id=employee_id, active_flag=True
         ).exists()
+
+    def caller_may_edit_content(self, version: PlanVersion) -> bool:
+        """May the caller edit this version's structured content — the risk
+        register, BIA sub-forms, recovery strategy, documents — or its
+        cost-code metadata?
+
+        Administrators only. A coordinator's assignment authorises answering
+        the questionnaire, exemptions and submission (`caller_may_author`),
+        not editing the rest of the plan.
+        """
+        return self.get_scope().has_role(RoleCode.ADMIN)
 
 
 def version_list_context(plan: Plan) -> dict:
